@@ -1,0 +1,159 @@
+{{ define "title" }}{{ .Job.Name }} ({{ .Job.DC }}) - {{ .Name }}{{ end }}
+
+{{ define "content" }}
+<span id="health-status" data-health="{{ healthClass .Job.Health }}" hidden></span>
+<div class="topbar">
+  <div>
+    <nav aria-label="Breadcrumb">
+      <ol class="unstyled hstack" style="font-size: var(--text-7)">
+        <li><a href="/" class="unstyled">Dashboard</a></li>
+        <li aria-hidden="true">/</li>
+        <li><a href="/group/{{ .GroupSlug }}" class="unstyled">{{ .GroupName }}</a></li>
+        <li aria-hidden="true">/</li>
+        <li><strong>{{ .Job.Name }}</strong></li>
+      </ol>
+    </nav>
+    <h1>{{ .Job.Name }}</h1>
+    <div class="job-meta">
+      <span class="badge {{ typeBadge .Job.Type }}">{{ .Job.Type }}</span>
+      <span class="chip">
+        <span class="label">datacenter:</span> {{ .Job.DC }}
+      </span>
+      <span class="chip">
+        <span class="label">namespace:</span> {{ .Job.Namespace }}
+      </span>
+      {{ if .Job.Periodic }}
+      <span class="chip">scheduled</span>
+      <span class="chip"><span class="label">runs:</span> {{ .Job.ChildrenDead }} done{{ if gt .Job.ChildrenRunning 0 }}, {{ .Job.ChildrenRunning }} active{{ end }}{{ if gt .Job.ChildrenPending 0 }}, {{ .Job.ChildrenPending }} pending{{ end }}</span>
+      {{ else }}
+      <span class="chip">
+        <span class="status-dot {{ statusClass .Job.Status }}"></span>
+        {{ .Job.Status }}
+      </span>
+      {{ end }}
+      {{ if gt .Job.TotalRestarts 0 }}
+        <span class="badge {{ restartClass .Job.MaxAlertRestarts }}">{{ .Job.TotalRestarts }}</span>
+      {{ end }}
+      {{ if .Job.Periodic }}
+        <span class="badge">periodic</span>
+      {{ end }}
+    </div>
+    {{ if .Job.Periodic }}
+    <table class="periodic-info" style="margin-top: 0.75rem; font-size: var(--text-7); color: var(--muted-foreground);">
+      {{ range .Job.Crons }}
+      <tr>
+        <td style="padding: 0.1rem 0.5rem 0.1rem 0; color: var(--muted-foreground);">cron</td>
+        <td style="padding: 0.1rem 0;"><code>{{ . }}</code></td>
+      </tr>
+      {{ end }}
+      {{ if not .Job.NextRun.IsZero }}
+      <tr>
+        <td style="padding: 0.1rem 0.5rem 0.1rem 0; color: var(--muted-foreground);">next run</td>
+        <td style="padding: 0.1rem 0;">{{ fmtTime .Job.NextRun }}</td>
+      </tr>
+      {{ end }}
+    </table>
+    {{ end }}
+  </div>
+  <span class="refresh-note">
+    {{ fmtTime .UpdatedAt }}
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>
+  </span>
+</div>
+
+{{ if eq (len .Job.Allocs) 0 }}
+<div role="alert" data-variant="warning">
+  No allocations found for this job.
+</div>
+{{ end }}
+
+{{ range .Job.Allocs }}
+{{ $allocID := .ID }}
+<article class="card" style="margin-bottom: 1rem;">
+  <header>
+    <h3>
+      {{ .TaskGroup }} <small style="color: var(--muted-foreground);">({{ .ID }})</small>
+    </h3>
+    <div class="meta-row">
+      <span>Node: {{ .NodeName }}</span>
+      <span>Status: {{ .Status }}</span>
+    </div>
+  </header>
+
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>State</th>
+          <th>Restarts</th>
+          <th>Last Restart</th>
+          <th>Started</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Tasks }}
+        <tr>
+          <td><strong>{{ .Name }}</strong></td>
+          <td>
+            <span class="status-dot {{ statusClass .State }}"></span>
+            {{ .State }}
+            {{ if .Failed }}<span class="badge danger">failed</span>{{ end }}
+          </td>
+          <td>
+            {{ if gt .Restarts 0 }}
+              <span class="badge {{ restartClass .Restarts }}">{{ .Restarts }}</span>
+            {{ else }}
+              <span style="color: var(--muted-foreground)">0</span>
+            {{ end }}
+          </td>
+          <td>
+            {{ if not .LastRestart.IsZero }}
+              {{ fmtTime .LastRestart }}
+            {{ else }}
+              -
+            {{ end }}
+          </td>
+          <td>
+            {{ if not .StartedAt.IsZero }}
+              {{ fmtTime .StartedAt }}
+            {{ else }}
+              -
+            {{ end }}
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
+
+  {{ range .Tasks }}
+  {{ if .Events }}
+  <details data-details-id="events-{{ $allocID }}-{{ .Name }}" style="margin-top: 0.5rem;">
+    <summary>Events for {{ .Name }} ({{ len .Events }})</summary>
+    <div class="table event-list">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range .Events }}
+          <tr>
+            <td style="white-space: nowrap;">{{ fmtTime .Time }}</td>
+            <td>{{ .Type }}</td>
+            <td>{{ .Message }}</td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {{ end }}
+  {{ end }}
+</article>
+{{ end }}
+{{ end }}

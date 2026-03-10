@@ -1,0 +1,100 @@
+{{ define "title" }}{{ .Name }}{{ end }}
+
+{{ define "content" }}
+<span id="health-status" data-health="{{ overallHealth .AllGroups }}" hidden></span>
+<div class="topbar">
+  <h1>{{ .Name }}</h1>
+  <span class="refresh-note">
+    {{ fmtTime .UpdatedAt }}
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>
+  </span>
+</div>
+
+<!-- Overall health banner -->
+<div class="health-banner health-banner-{{ overallHealth .AllGroups }}">
+  <span class="status-dot {{ overallHealth .AllGroups }}" style="width: 12px; height: 12px;"></span>
+  <span class="health-banner-text">{{ overallText .AllGroups }}</span>
+  <span class="health-banner-stats">
+    {{ healthyCount .AllGroups }}/{{ len .AllGroups }} groups healthy
+  </span>
+</div>
+
+<!-- Search -->
+<div style="margin-top: 1rem;">
+  <input id="search" type="text" placeholder="Search groups..." style="width: 100%; padding: 0.5rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-medium); font-size: var(--text-6); background: var(--background); color: var(--foreground);" oninput="filterGroups(this.value)">
+</div>
+
+<!-- Group list -->
+<div class="table" style="margin-top: 0.5rem;">
+  <table>
+    <thead>
+      <tr>
+        <th>Group</th>
+        <th>Jobs</th>
+        <th>Types</th>
+        <th>Datacenters</th>
+        <th>Restarts</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Groups }}
+      <tr class="group-row" onclick="window.location='/group/{{ slugify .Name }}'">
+        <td>
+          <a href="/group/{{ slugify .Name }}" class="unstyled">
+            <strong>{{ .Name }}</strong>
+          </a>
+        </td>
+        <td>
+          {{ if eq .HealthyJobs .TotalJobs }}
+            <span style="color: var(--success)">{{ .TotalJobs }}/{{ .TotalJobs }}</span>
+          {{ else }}
+            <span style="color: var(--warning)">{{ .HealthyJobs }}/{{ .TotalJobs }}</span>
+          {{ end }}
+        </td>
+        <td>
+          {{ range $t := jobTypesList .Jobs }}
+            <span class="badge {{ typeBadge $t }}">{{ $t }}</span>
+          {{ end }}
+        </td>
+        <td>
+          {{ $dch := .DCHealth }}
+          {{ range $dc := sortedDCs }}{{ $h := index $dch $dc }}
+          <span class="dc-pill-inline">
+            <span class="status-dot {{ healthClass $h }}"></span>{{ $dc }}
+          </span>
+          {{ end }}
+        </td>
+        <td>
+          {{ $r := groupRestarts .Jobs }}
+          {{ if gt $r 0 }}
+            <span class="badge {{ groupRestartClass $r }}">{{ $r }}</span>
+          {{ else }}
+            <span style="color: var(--muted-foreground)">-</span>
+          {{ end }}
+        </td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+</div>
+
+{{ if gt .Pgn.TotalPages 1 }}
+<nav aria-label="Pagination" style="margin-top: 1rem; display: flex; justify-content: center;">
+  <menu class="buttons">
+    {{ if gt .Pgn.Page 1 }}
+      <li><a href="?page={{ subtract .Pgn.Page 1 }}" class="button outline small">← Previous</a></li>
+    {{ end }}
+    {{ range .Pgn.Pages }}
+      {{ if eq . $.Pgn.Page }}
+        <li><a href="?page={{ . }}" class="button small" aria-current="page">{{ . }}</a></li>
+      {{ else }}
+        <li><a href="?page={{ . }}" class="button outline small">{{ . }}</a></li>
+      {{ end }}
+    {{ end }}
+    {{ if lt .Pgn.Page .Pgn.TotalPages }}
+      <li><a href="?page={{ add .Pgn.Page 1 }}" class="button outline small">Next →</a></li>
+    {{ end }}
+  </menu>
+</nav>
+{{ end }}
+{{ end }}

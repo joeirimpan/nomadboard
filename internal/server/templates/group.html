@@ -1,0 +1,100 @@
+{{ define "title" }}{{ .Group.Name }} - {{ .Name }}{{ end }}
+
+{{ define "content" }}
+<span id="health-status" data-health="{{ healthClass .Group.Health }}" hidden></span>
+<div class="topbar">
+  <div>
+    <nav aria-label="Breadcrumb">
+      <ol class="unstyled hstack" style="font-size: var(--text-7)">
+        <li><a href="/" class="unstyled">Dashboard</a></li>
+        <li aria-hidden="true">/</li>
+        <li><strong>{{ .Group.Name }}</strong></li>
+      </ol>
+    </nav>
+    <h1>{{ .Group.Name }}</h1>
+    <div class="meta-row">
+      <span>{{ .Group.HealthyJobs }}/{{ .Group.TotalJobs }} jobs healthy</span>
+      <span>{{ .Group.TotalAllocs }} allocations</span>
+    </div>
+  </div>
+  <span class="refresh-note">
+    {{ fmtTime .UpdatedAt }}
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>
+  </span>
+</div>
+
+<div class="dc-pills" style="margin-bottom: 1rem;">
+  {{ $dch := .Group.DCHealth }}
+  {{ range $dc := sortedDCs }}{{ with index $dch $dc }}
+  <span class="dc-pill">
+    <span class="status-dot {{ healthClass . }}"></span>
+    {{ $dc }}
+  </span>
+  {{ end }}{{ end }}
+</div>
+
+<div class="table">
+  <table>
+    <thead>
+      <tr>
+        <th>Job</th>
+        <th>Type</th>
+        <th>Datacenter</th>
+        <th>Status</th>
+        <th>Allocs</th>
+        <th style="text-align: center">Restarts</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Jobs }}
+      <tr>
+        <td>
+          <a href="/job/{{ .Namespace }}/{{ .ID }}?dc={{ .DC }}">{{ .Name }}</a>
+        </td>
+        <td>
+          <span class="badge {{ typeBadge .Type }}">{{ .Type }}</span>
+          {{ if .Periodic }}<span class="badge">periodic</span>{{ end }}
+        </td>
+        <td>{{ .DC }}</td>
+        <td>
+          {{ if .Periodic }}
+            <span style="color: var(--muted-foreground);">{{ .ChildrenDead }} done{{ if gt .ChildrenRunning 0 }}, {{ .ChildrenRunning }} active{{ end }}</span>
+          {{ else }}
+            <span class="status-dot {{ statusClass .Status }}"></span>
+            {{ .Status }}
+          {{ end }}
+        </td>
+        <td>{{ len .Allocs }}</td>
+        <td style="text-align: center">
+          {{ if gt .MaxRestarts 0 }}
+            <span class="badge {{ restartClass .MaxAlertRestarts }}">{{ .TotalRestarts }}</span>
+          {{ else }}
+            <span style="color: var(--muted-foreground)">-</span>
+          {{ end }}
+        </td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+</div>
+
+{{ if gt .Pgn.TotalPages 1 }}
+<nav aria-label="Pagination" style="margin-top: 1rem; display: flex; justify-content: center;">
+  <menu class="buttons">
+    {{ if gt .Pgn.Page 1 }}
+      <li><a href="?page={{ subtract .Pgn.Page 1 }}" class="button outline small">← Previous</a></li>
+    {{ end }}
+    {{ range .Pgn.Pages }}
+      {{ if eq . $.Pgn.Page }}
+        <li><a href="?page={{ . }}" class="button small" aria-current="page">{{ . }}</a></li>
+      {{ else }}
+        <li><a href="?page={{ . }}" class="button outline small">{{ . }}</a></li>
+      {{ end }}
+    {{ end }}
+    {{ if lt .Pgn.Page .Pgn.TotalPages }}
+      <li><a href="?page={{ add .Pgn.Page 1 }}" class="button outline small">Next →</a></li>
+    {{ end }}
+  </menu>
+</nav>
+{{ end }}
+{{ end }}

@@ -1,0 +1,61 @@
+# Nomad Job Status - Example Configuration
+#
+# Copy this file to config.huml and edit to match your setup.
+
+# Display name shown in the UI header and page titles.
+# Defaults to "Nomad Pulse" if omitted.
+name: "Nomad Pulse"
+
+# Nomad cluster endpoints. One entry per datacenter.
+# token_env is optional - omit for clusters without ACLs.
+clusters::
+  - ::
+    name: "dc1"
+    address: "http://localhost:4646"
+    token_env: "NOMAD_TOKEN"
+
+# How often to poll Nomad clusters (seconds).
+poll_interval: 30
+
+# Restart detection uses two windows:
+#   restart_window       - display window: restarts within this period are shown in the UI (default: 24h)
+#   restart_alert_window - alert window: only restarts within this shorter period affect health (default: 30m)
+#
+# This avoids planned BOD restarts (e.g. at 8 AM) showing as unhealthy by 9 AM.
+#
+# Thresholds (applied to the alert window count):
+#   >= restart_warn -> yellow warning
+#   >= restart_crit -> red critical
+# Maximum jobs per page in group view.
+per_page: 20
+
+# Mask IP-like suffixes in node names (4 dash-separated numeric segments).
+# e.g. "myapp-aux-10-0-1-5" → "myapp-aux-***"
+mask_node_ip: false
+
+restart_window: "24h"
+restart_alert_window: "30m"
+restart_warn: 1
+restart_crit: 5
+
+# HTTP listen address.
+listen: ":9999"
+
+# Service groups. Logical grouping of jobs for the dashboard.
+# Glob patterns are supported in job names (e.g. "api-*").
+groups::
+  - ::
+    name: "My App"
+    namespace: "default"
+    priority: 1
+    jobs::
+      - "web-frontend"
+      - "api-server"
+      - "worker-*"
+  - ::
+    name: "Infrastructure"
+    namespace: "infra"
+    priority: 10
+    jobs::
+      - "consul-*"
+      - "vault-*"

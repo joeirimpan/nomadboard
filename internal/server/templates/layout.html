@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ block "title" . }}{{ .Name }}{{ end }}</title>
+  <link id="favicon" rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='%2316a34a'/></svg>">
+  <link rel="stylesheet" href="https://unpkg.com/@knadh/oat@0.4.2/oat.min.css">
+  <script src="https://unpkg.com/@knadh/oat@0.4.2/oat.min.js" defer></script>
+  <style>
+    :root {
+      --status-healthy: #16a34a;
+      --status-warning: #d97706;
+      --status-critical: #dc2626;
+    }
+    body { max-width: 1200px; margin: 0 auto; padding: 1rem 1.5rem; }
+    .status-dot {
+      display: inline-block;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    .status-dot.healthy { background: var(--status-healthy); }
+    .status-dot.warning { background: var(--status-warning); }
+    .status-dot.critical { background: var(--status-critical); }
+
+    /* Overall health banner */
+    .health-banner {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-medium);
+      border: 1px solid var(--border);
+      font-size: var(--text-6);
+    }
+    .health-banner-healthy {
+      border-left: 4px solid var(--status-healthy);
+    }
+    .health-banner-warning {
+      border-left: 4px solid var(--status-warning);
+    }
+    .health-banner-critical {
+      border-left: 4px solid var(--status-critical);
+    }
+
+    .health-banner-text { font-weight: var(--font-semibold); }
+    .health-banner-stats {
+      margin-left: auto;
+      font-size: var(--text-7);
+      color: var(--muted-foreground);
+    }
+
+    /* Group list rows */
+    .group-row { cursor: pointer; }
+    .group-row:hover { background: var(--faint); }
+
+    .dc-pill-inline {
+      display: inline-flex; align-items: center; gap: 2px;
+      margin-right: 0.5rem;
+      font-size: var(--text-7);
+    }
+
+    /* DC pills */
+    .dc-pills { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    .dc-pill {
+      display: inline-flex; align-items: center;
+      padding: 2px 10px; border-radius: var(--radius-medium);
+      font-size: var(--text-7);
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      border: 1px solid var(--border);
+    }
+
+    /* Job detail meta chips */
+    .job-meta {
+      display: flex; gap: 0.5rem; flex-wrap: wrap;
+      margin-top: 0.5rem;
+    }
+    .job-meta .chip {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      padding: 0.2rem 0.6rem;
+      border-radius: var(--radius-medium);
+      font-size: var(--text-7);
+      background: var(--secondary);
+      color: var(--secondary-foreground);
+      border: 1px solid var(--border);
+    }
+    .job-meta .chip .label {
+      color: var(--muted-foreground);
+      margin-right: 0.15rem;
+    }
+
+    .meta-row {
+      display: flex; gap: 1rem; align-items: center;
+      font-size: var(--text-7);
+      color: var(--muted-foreground);
+      margin-top: 0.25rem;
+    }
+
+    .topbar {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 1.5rem; flex-wrap: wrap; gap: 0.5rem;
+    }
+    .topbar h1 { margin: 0; }
+
+    .event-list { font-size: var(--text-7); }
+    .event-list td { padding: 0.25rem 0.5rem; }
+
+    .refresh-note {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: var(--text-7);
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+
+    .theme-toggle {
+      cursor: pointer;
+      background: var(--secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-medium);
+      padding: 0.35rem 0.6rem;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+    .theme-toggle:hover {
+      background: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div id="content">
+    {{ block "content" . }}{{ end }}
+  </div>
+  <script>
+    function applyTheme(theme) {
+      document.documentElement.style.colorScheme = theme;
+      var icon = document.getElementById('theme-icon');
+      if (icon) icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+      localStorage.setItem('theme', theme);
+    }
+    function syncThemeIcon() {
+      var theme = localStorage.getItem('theme') ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      var icon = document.getElementById('theme-icon');
+      if (icon) icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+    }
+    function toggleTheme() {
+      const current = localStorage.getItem('theme') ||
+        (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      applyTheme(current === 'dark' ? 'light' : 'dark');
+    }
+    (function() {
+      const saved = localStorage.getItem('theme');
+      if (saved) { applyTheme(saved); return; }
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        applyTheme('dark');
+      }
+    })();
+
+    // Search filter for dashboard groups.
+    var _searchQuery = '';
+    function filterGroups(q) {
+      _searchQuery = q.toLowerCase();
+      applySearch();
+    }
+    function applySearch() {
+      var rows = document.querySelectorAll('.group-row');
+      if (!rows.length) return;
+      rows.forEach(function(row) {
+        var name = row.textContent.toLowerCase();
+        row.style.display = name.includes(_searchQuery) ? '' : 'none';
+      });
+    }
+
+    // Dynamic favicon based on health status.
+    function updateFavicon() {
+      var el = document.getElementById('health-status');
+      if (!el) return;
+      var health = el.dataset.health;
+      var color = health === 'critical' ? '%23dc2626' : health === 'warning' ? '%23d97706' : '%2316a34a';
+      document.getElementById('favicon').href =
+        "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='7' fill='" + color + "'/></svg>";
+    }
+    updateFavicon();
+
+    // SSE live updates.
+    (function() {
+      const path = location.pathname === '/' ? '/events/dashboard' + location.search : '/events' + location.pathname + location.search;
+      const es = new EventSource(path);
+      es.onmessage = function(e) {
+        // Save open <details> state.
+        var open = {};
+        document.querySelectorAll('details[data-details-id][open]').forEach(function(d) {
+          open[d.dataset.detailsId] = true;
+        });
+
+        document.getElementById('content').innerHTML = e.data;
+
+        // Restore open <details> state.
+        Object.keys(open).forEach(function(id) {
+          var d = document.querySelector('details[data-details-id="' + id + '"]');
+          if (d) d.open = true;
+        });
+
+        updateFavicon();
+        syncThemeIcon();
+
+        // Re-apply search filter and restore search input value.
+        var searchInput = document.getElementById('search');
+        if (searchInput && _searchQuery) {
+          searchInput.value = _searchQuery;
+          applySearch();
+        }
+      };
+      es.onerror = function() {
+        // EventSource auto-reconnects. Only reload if permanently closed.
+        if (es.readyState === EventSource.CLOSED) {
+          setTimeout(() => location.reload(), 5000);
+        }
+      };
+    })();
+  </script>
+</body>
+</html>
