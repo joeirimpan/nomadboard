@@ -20,10 +20,23 @@ type Cluster struct {
 // Group is a logical grouping of Nomad jobs.
 // Lower priority numbers appear first; nil sorts to the end.
 type Group struct {
-	Name      string   `huml:"name"`
-	Namespace string   `huml:"namespace"`
-	Jobs      []string `huml:"jobs"`
-	Priority  *int     `huml:"priority"`
+	Name       string   `huml:"name"`
+	Namespace  string   `huml:"namespace"`
+	Namespaces []string `huml:"namespaces"`
+	Jobs       []string `huml:"jobs"`
+	Priority   *int     `huml:"priority"`
+}
+
+// EffectiveNamespaces resolves the namespace list.
+// Plural field takes precedence; falls back to singular, then "default".
+func (g Group) EffectiveNamespaces() []string {
+	if len(g.Namespaces) > 0 {
+		return g.Namespaces
+	}
+	if g.Namespace != "" {
+		return []string{g.Namespace}
+	}
+	return []string{"default"}
 }
 
 // effectivePriority returns the sort key. Nil priority sorts to the end.

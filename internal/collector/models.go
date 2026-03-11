@@ -2,7 +2,6 @@ package collector
 
 import "time"
 
-// Health represents the overall health of a group or job.
 type Health int
 
 const (
@@ -35,13 +34,12 @@ func (h Health) String() string {
 	}
 }
 
-// Snapshot is the complete state of all groups, refreshed periodically.
+// Snapshot is the full state produced by each poll cycle.
 type Snapshot struct {
 	Groups    []GroupStatus
 	UpdatedAt time.Time
 }
 
-// GroupStatus is the aggregated status for a logical group of jobs.
 type GroupStatus struct {
 	Name   string
 	Jobs   []JobStatus
@@ -54,7 +52,6 @@ type GroupStatus struct {
 	TotalAllocs int
 }
 
-// JobStatus is the status of a single Nomad job in a specific DC.
 type JobStatus struct {
 	ID        string
 	Name      string
@@ -81,7 +78,6 @@ type JobStatus struct {
 	MaxAlertRestarts   int
 }
 
-// AllocStatus is the status of a single allocation.
 type AllocStatus struct {
 	ID        string
 	TaskGroup string
@@ -90,7 +86,6 @@ type AllocStatus struct {
 	Tasks     []TaskStatus
 }
 
-// TaskStatus is the status of a single task within an allocation.
 type TaskStatus struct {
 	Name        string
 	State       string // running, dead, pending
@@ -102,7 +97,6 @@ type TaskStatus struct {
 	Events      []TaskEvent
 }
 
-// TaskEvent is a single lifecycle event for a task.
 type TaskEvent struct {
 	Type    string
 	Time    time.Time

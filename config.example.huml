@@ -59,3 +59,12 @@ groups::
     jobs::
       - "consul-*"
       - "vault-*"
+  # Groups can span multiple namespaces. Use "namespaces" (plural) to list them.
+  # Jobs with the same name in different namespaces are shown separately.
+  # - ::
+  #   name: "Monitoring"
+  #   namespaces::
+  #     - "infra"
+  #     - "platform"
+  #   jobs::
+  #     - "vmagent"

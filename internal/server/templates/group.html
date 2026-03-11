@@ -38,6 +38,7 @@
     <thead>
       <tr>
         <th>Job</th>
+        <th>Namespace</th>
         <th>Type</th>
         <th>Datacenter</th>
         <th>Status</th>
@@ -51,6 +52,7 @@
         <td>
           <a href="/job/{{ .Namespace }}/{{ .ID }}?dc={{ .DC }}">{{ .Name }}</a>
         </td>
+        <td>{{ .Namespace }}</td>
         <td>
           <span class="badge {{ typeBadge .Type }}">{{ .Type }}</span>
           {{ if .Periodic }}<span class="badge">periodic</span>{{ end }}

@@ -56,7 +56,6 @@ func New(cfg config.Config, log *slog.Logger) (*Collector, error) {
 	}, nil
 }
 
-// Snapshot returns the current snapshot.
 func (c *Collector) Snapshot() Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -72,14 +71,12 @@ func (c *Collector) Subscribe() chan struct{} {
 	return ch
 }
 
-// Unsubscribe removes a subscriber.
 func (c *Collector) Unsubscribe(ch chan struct{}) {
 	c.subMu.Lock()
 	delete(c.subs, ch)
 	c.subMu.Unlock()
 }
 
-// notify signals all subscribers.
 func (c *Collector) notify() {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
@@ -91,12 +88,12 @@ func (c *Collector) notify() {
 	}
 }
 
-// Poll fetches data from all clusters immediately and updates the snapshot.
+// Poll triggers an immediate poll outside the ticker loop.
 func (c *Collector) Poll() {
 	c.poll()
 }
 
-// Run starts the polling loop, blocking until ctx is cancelled.
+// Run polls in a loop until ctx is cancelled.
 func (c *Collector) Run(ctx context.Context) {
 	ticker := time.NewTicker(c.cfg.PollDuration())
 	defer ticker.Stop()
@@ -180,10 +177,21 @@ func (c *Collector) poll() {
 			gs.DCHealth[cl.Name] = Healthy
 		}
 
+		namespaces := grp.EffectiveNamespaces()
 		for _, pattern := range grp.Jobs {
 			for _, cl := range c.cfg.Clusters {
 				for key, stub := range jobIndex {
-					if key.dc != cl.Name || key.ns != grp.Namespace {
+					if key.dc != cl.Name {
+						continue
+					}
+					nsMatch := false
+					for _, ns := range namespaces {
+						if ns == key.ns {
+							nsMatch = true
+							break
+						}
+					}
+					if !nsMatch {
 						continue
 					}
 					matched, _ := filepath.Match(pattern, key.name)
@@ -191,8 +199,8 @@ func (c *Collector) poll() {
 						continue
 					}
 
-					ak := allocKey{ns: grp.Namespace, jobID: key.name, dc: cl.Name}
-				js := c.buildJobStatus(cl.Name, grp.Namespace, stub, allocIndex[ak], restartWindow, alertWindow)
+					ak := allocKey{ns: key.ns, jobID: key.name, dc: cl.Name}
+					js := c.buildJobStatus(cl.Name, key.ns, stub, allocIndex[ak], restartWindow, alertWindow)
 					gs.Jobs = append(gs.Jobs, js)
 					gs.TotalJobs++
 					gs.TotalAllocs += len(js.Allocs)
@@ -212,7 +220,10 @@ func (c *Collector) poll() {
 			if gs.Jobs[i].DC != gs.Jobs[j].DC {
 				return gs.Jobs[i].DC < gs.Jobs[j].DC
 			}
-			return gs.Jobs[i].Name < gs.Jobs[j].Name
+			if gs.Jobs[i].Name != gs.Jobs[j].Name {
+				return gs.Jobs[i].Name < gs.Jobs[j].Name
+			}
+			return gs.Jobs[i].Namespace < gs.Jobs[j].Namespace
 		})
 
 		gs.Health = Healthy

@@ -9,7 +9,7 @@ A read-only status page for Nomad clusters. Groups jobs into logical services, s
 ## Features
 
 - **Multi-DC consolidation** - Connect to multiple Nomad clusters and see everything in one page.
-- **Job grouping** - Group related jobs via a HUML config file.
+- **Job grouping** - Group related jobs via a HUML config file. Groups can span multiple namespaces.
 - **Restart detection** - Shows restart counts within a display window, with a separate shorter alert window for health decisions (avoids false alerts from planned restarts).
 - **Drill-down** - Dashboard > Group > Job > Allocations > Task events.
 - **No IPs exposed** - Only shows node names, alloc IDs, and task names.
@@ -55,6 +55,13 @@ groups::
     jobs::
       - "api-server"
       - "worker-*"
+  - ::
+    name: "Monitoring"
+    namespaces::
+      - "infra"
+      - "platform"
+    jobs::
+      - "vmagent"
 ```
 
 ### Config Reference
@@ -76,7 +83,8 @@ groups::
 | `listen` | HTTP listen address | `:9999` |
 | `groups` | List of job groups | required |
 | `groups[].name` | Group display name | required |
-| `groups[].namespace` | Nomad namespace to query | required |
+| `groups[].namespace` | Nomad namespace (single) | optional |
+| `groups[].namespaces` | Nomad namespaces (multiple) | optional |
 | `groups[].priority` | Display order (lower first); groups without priority appear after prioritised ones | none |
 | `groups[].jobs` | List of job name patterns (glob) | required |
 
