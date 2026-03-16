@@ -94,6 +94,32 @@ groups::
 - **Group** (`/group/:slug`) - Table of jobs in the group with type, DC, status, restart count.
 - **Job** (`/job/:ns/:id?dc=X`) - Allocations with task states, restart info, and expandable event log.
 
+## Nomad ACL Policy
+
+Nomadboard only needs read access. Create a minimal read-only ACL policy:
+
+```hcl
+namespace "*" {
+  policy = "read"
+}
+
+node {
+  policy = "read"
+}
+```
+
+Apply it and create a token:
+
+```bash
+# Write the policy
+nomad acl policy apply nomadboard-ro -description "Read-only access for nomadboard" nomadboard-policy.hcl
+
+# Create a token with this policy
+nomad acl token create -name="nomadboard" -policy="nomadboard-ro" -type="client"
+```
+
+Set the resulting secret ID in the environment variable referenced by `token_env` in your config.
+
 ## Building
 
 ```bash
