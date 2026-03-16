@@ -11,8 +11,9 @@ A read-only status page for Nomad clusters. Groups jobs into logical services, s
 - **Multi-DC consolidation** - Connect to multiple Nomad clusters and see everything in one page.
 - **Job grouping** - Group related jobs via a HUML config file. Groups can span multiple namespaces.
 - **Restart detection** - Shows restart counts within a display window, with a separate shorter alert window for health decisions (avoids false alerts from planned restarts).
+- **Live updates** - Pages refresh automatically via Server-Sent Events (SSE). No manual reload needed.
 - **Drill-down** - Dashboard > Group > Job > Allocations > Task events.
-- **No IPs exposed** - Only shows node names, alloc IDs, and task names.
+- **No IPs exposed** - Only shows node names, alloc IDs, and task names. Optional IP masking for node names.
 - **Read-only** - Only uses Nomad read APIs. No write operations.
 - **Glob patterns** - Match job names with `*` wildcards.
 - **Single binary** - No JS build step, no node_modules. Just Go + embedded templates.
@@ -26,6 +27,10 @@ cp config.example.huml config.huml
 
 # Run
 go run main.go -config config.huml
+
+# Or build and run
+make build
+./nomadboard -config config.huml
 
 # Open http://localhost:9999
 ```
@@ -79,7 +84,9 @@ groups::
 | `restart_alert_window` | Alert window - restarts affecting health status | `30m` |
 | `restart_warn` | Restart count (in alert window) for warning | `1` |
 | `restart_crit` | Restart count (in alert window) for critical | `5` |
-| `mask_node_ip` | Mask IP-like suffixes in node names | `false` |
+| `mask_node_ip` | Mask IP-like suffixes in node names (e.g. `myapp-10-0-1-5` → `myapp-***`) | `false` |
+| `timezone` | IANA timezone for displaying timestamps (e.g. `Asia/Kolkata`) | `UTC` |
+| `max_sse_conns` | Maximum concurrent SSE connections | `128` |
 | `listen` | HTTP listen address | `:9999` |
 | `groups` | List of job groups | required |
 | `groups[].name` | Group display name | required |
@@ -90,9 +97,10 @@ groups::
 
 ## Pages
 
-- **Dashboard** (`/`) - Grid of group cards with health status per DC.
-- **Group** (`/group/:slug`) - Table of jobs in the group with type, DC, status, restart count.
-- **Job** (`/job/:ns/:id?dc=X`) - Allocations with task states, restart info, and expandable event log.
+- **Dashboard** (`/`) - Table of groups with health status per DC, job counts, and restart indicators.
+- **Group** (`/group/{slug}`) - Table of jobs in the group with type, DC, status, restart count.
+- **Job** (`/job/{ns}/{id}?dc=X`) - Allocations with task states, restart info, and expandable event log.
+- **Health** (`/healthz`) - Health check endpoint.
 
 ## Nomad ACL Policy
 
@@ -123,7 +131,14 @@ Set the resulting secret ID in the environment variable referenced by `token_env
 ## Building
 
 ```bash
-go build -o nomadboard .
+# Development build
+make build
+
+# Linux amd64 release tarball
+make dist
+
+# Run tests
+make test
 ```
 
 ## Stack
@@ -131,4 +146,5 @@ go build -o nomadboard .
 - Go stdlib (`net/http`, `html/template`, `embed`)
 - [hashicorp/nomad/api](https://github.com/hashicorp/nomad/tree/main/api) - Nomad API client
 - [go-huml](https://github.com/huml-lang/go-huml) - HUML config parser
+- [knadh/paginator](https://github.com/knadh/paginator) - SQL-style pagination
 - [Oat](https://oat.ink/) - CSS/JS UI library (~8KB, CDN)
