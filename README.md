@@ -16,6 +16,7 @@ A read-only status page for Nomad clusters. Groups jobs into logical services, s
 - **No IPs exposed** - Only shows node names, alloc IDs, and task names. Optional IP masking for node names.
 - **Read-only** - Only uses Nomad read APIs. No write operations.
 - **Glob patterns** - Match job names with `*` wildcards.
+- **External links** - Add per-job links to Grafana, LogChef, or any service. Supports cluster vars, per-job metadata, and glob pattern matching.
 - **Single binary** - No JS build step, no node_modules. Just Go + embedded templates.
 
 ## Quick Start
@@ -94,6 +95,20 @@ groups::
 | `groups[].namespaces` | Nomad namespaces (multiple) | optional |
 | `groups[].priority` | Display order (lower first); groups without priority appear after prioritised ones | none |
 | `groups[].jobs` | List of job name patterns (glob) | required |
+| `groups[].links` | External links rendered per job (see below) | optional |
+| `groups[].links[].label` | Link tooltip text | required |
+| `groups[].links[].icon` | Image URL or emoji for the icon | required |
+| `groups[].links[].url` | URL template using `[[ ]]` delimiters | required |
+| `groups[].links[].meta` | Map of job pattern → key/value pairs for `[[.Meta.*]]` | optional |
+| `clusters[].vars` | Key/value pairs available as `[[.Var.*]]` in link URLs | optional |
+
+### External Links
+
+Add clickable icon links per job. Link URLs are Go templates with `[[ ]]` delimiters (to avoid Nomad template conflicts).
+
+Available template variables: `[[.Job]]`, `[[.Namespace]]`, `[[.DC]]`, `[[.Group]]`, `[[.Var.<key>]]` (cluster vars), `[[.Meta.<key>]]` (per-job metadata).
+
+If a link has `meta`, only jobs matching a meta key get the link. Exact match beats glob. See `config.example.huml` for a full example.
 
 ## Pages
 
