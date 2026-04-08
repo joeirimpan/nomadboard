@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	ttmpl "text/template"
 	"time"
 
 	huml "github.com/huml-lang/go-huml"
@@ -12,9 +13,24 @@ import (
 
 // Cluster is a Nomad cluster endpoint.
 type Cluster struct {
-	Name     string `huml:"name"`
-	Address  string `huml:"address"`
-	TokenEnv string `huml:"token_env"`
+	Name     string            `huml:"name"`
+	Address  string            `huml:"address"`
+	TokenEnv string            `huml:"token_env"`
+	Vars     map[string]string `huml:"vars"`
+}
+
+// Link is an external link rendered as an icon button on jobs.
+// The URL field is a Go text/template with access to {{.Group}}, {{.Job}},
+// {{.Namespace}}, {{.DC}}, {{.Var.<key>}} (cluster vars), and
+// {{.Meta.<key>}} (per-job metadata from the Meta map).
+//
+// Meta keys are job name patterns (globs supported). A job only gets
+// this link if it matches a Meta key. Exact match takes priority over globs.
+type Link struct {
+	Label string                       `huml:"label"`
+	Icon  string                       `huml:"icon"`
+	URL   string                       `huml:"url"`
+	Meta  map[string]map[string]string `huml:"meta"`
 }
 
 // Group is a logical grouping of Nomad jobs.
@@ -25,6 +41,7 @@ type Group struct {
 	Namespaces []string `huml:"namespaces"`
 	Jobs       []string `huml:"jobs"`
 	Priority   *int     `huml:"priority"`
+	Links      []Link   `huml:"links"`
 }
 
 // EffectiveNamespaces resolves the namespace list.
@@ -144,6 +161,19 @@ func Load(path string) (Config, error) {
 			return Config{}, fmt.Errorf("invalid timezone %q: %w", cfg.Timezone, err)
 		}
 		cfg.tz = loc
+	}
+
+	// Validate link URL templates.
+	for gi, grp := range cfg.Groups {
+		for li, lnk := range grp.Links {
+			if lnk.URL == "" {
+				return Config{}, fmt.Errorf("group %q link %d: url is required", grp.Name, li)
+			}
+			if _, err := ttmpl.New("").Delims("[[", "]]").Parse(lnk.URL); err != nil {
+				return Config{}, fmt.Errorf("group %q link %d: invalid url template: %w", grp.Name, li, err)
+			}
+			_ = gi
+		}
 	}
 
 	// Sort by priority, preserving config order for ties.

@@ -52,6 +52,33 @@ groups::
       - "web-frontend"
       - "api-server"
       - "worker-*"
+    # External links rendered as icon buttons per job.
+    # URL is a Go template: [[.Group]], [[.Job]], [[.Namespace]], [[.DC]],
+    #   [[.Var.<key>]] (cluster vars), [[.Meta.<key>]] (per-job metadata).
+    # icon can be an image URL (http/https) or an emoji string.
+    # meta keys are job patterns (globs supported). Exact match beats glob.
+    # A job only gets the link if it matches a meta key.
+    links::
+      - ::
+        label: "Grafana"
+        icon: "https://grafana.com/static/img/menu/grafana2.svg"
+        url: "https://grafana.internal/d/[[.Meta.dashboard]]?var-job=[[.Job]]"
+        meta::
+          "web-frontend"::
+            dashboard: "web/web-frontend"
+          "api-server"::
+            dashboard: "api/api-server"
+          "worker-*"::
+            dashboard: "workers/worker-overview"
+      - ::
+        label: "Logs"
+        icon: "https://logchef.app/logo.svg"
+        url: "https://logchef.internal/sources/[[.Meta.source_id]]/search"
+        meta::
+          "web-frontend"::
+            source_id: "src-web"
+          "api-server"::
+            source_id: "src-api"
   - ::
     name: "Infrastructure"
     namespace: "infra"

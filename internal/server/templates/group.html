@@ -51,6 +51,13 @@
       <tr>
         <td>
           <a href="/job/{{ .Namespace }}/{{ .ID }}?dc={{ .DC }}">{{ .Name }}</a>
+          {{ if .Links }}
+          <span class="ext-links-inline">
+            {{ range .Links }}
+              <a href="{{ .URL }}" target="_blank" rel="noopener" class="ext-link-pill" title="{{ .Label }}">{{ linkIcon .Icon }}</a>
+            {{ end }}
+          </span>
+          {{ end }}
         </td>
         <td>{{ .Namespace }}</td>
         <td>

@@ -32,6 +32,12 @@ type Server struct {
 
 func baseFuncMap(cfg config.Config) template.FuncMap {
 	return template.FuncMap{
+		"linkIcon": func(icon string) template.HTML {
+			if strings.HasPrefix(icon, "http://") || strings.HasPrefix(icon, "https://") || strings.HasPrefix(icon, "/") {
+				return template.HTML(`<img src="` + template.HTMLEscapeString(icon) + `" alt="" class="ext-icon">`)
+			}
+			return template.HTML(template.HTMLEscapeString(icon))
+		},
 		"add":         func(a, b int) int { return a + b },
 		"subtract":    func(a, b int) int { return a - b },
 		"healthClass": healthClass,
