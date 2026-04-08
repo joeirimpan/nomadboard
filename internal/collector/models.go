@@ -34,6 +34,13 @@ func (h Health) String() string {
 	}
 }
 
+// ResolvedLink is a link with its URL template already rendered.
+type ResolvedLink struct {
+	Label string
+	Icon  string
+	URL   string
+}
+
 // Snapshot is the full state produced by each poll cycle.
 type Snapshot struct {
 	Groups    []GroupStatus
@@ -61,6 +68,7 @@ type JobStatus struct {
 	DC        string
 	Allocs    []AllocStatus
 	Health    Health
+	Links     []ResolvedLink
 
 	Periodic        bool
 	Crons           []string

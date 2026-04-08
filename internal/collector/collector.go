@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -8,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	ttmpl "text/template"
 	"time"
 
 	nomad "github.com/hashicorp/nomad/api"
@@ -86,6 +88,69 @@ func (c *Collector) notify() {
 		default:
 		}
 	}
+}
+
+// linkData is the template context for link URL rendering.
+type linkData struct {
+	Group     string
+	Job       string
+	Namespace string
+	DC        string
+	Var       map[string]string
+	Meta      map[string]string
+}
+
+// matchMeta finds the best matching meta entry for a job name.
+// Exact match takes priority over globs. Returns nil if no match.
+func matchMeta(meta map[string]map[string]string, jobName string) map[string]string {
+	// Exact match first.
+	if m, ok := meta[jobName]; ok {
+		return m
+	}
+	// Glob match.
+	for pattern, m := range meta {
+		if matched, _ := filepath.Match(pattern, jobName); matched {
+			return m
+		}
+	}
+	return nil
+}
+
+// resolveLinks renders link URL templates for a specific job.
+// A link is only included if the job matches one of the link's Meta keys.
+// Links with no Meta map are always included.
+func resolveLinks(links []config.Link, data linkData) []ResolvedLink {
+	if data.Var == nil {
+		data.Var = make(map[string]string)
+	}
+	out := make([]ResolvedLink, 0, len(links))
+	for _, lnk := range links {
+		// If the link has meta, the job must match a key to get this link.
+		if len(lnk.Meta) > 0 {
+			m := matchMeta(lnk.Meta, data.Job)
+			if m == nil {
+				continue // job not in meta, skip this link
+			}
+			data.Meta = m
+		} else {
+			data.Meta = make(map[string]string)
+		}
+
+		tmpl, err := ttmpl.New("").Delims("[[", "]]").Option("missingkey=zero").Parse(lnk.URL)
+		if err != nil {
+			continue
+		}
+		var buf bytes.Buffer
+		if err := tmpl.Execute(&buf, data); err != nil {
+			continue
+		}
+		out = append(out, ResolvedLink{
+			Label: lnk.Label,
+			Icon:  lnk.Icon,
+			URL:   buf.String(),
+		})
+	}
+	return out
 }
 
 // Poll triggers an immediate poll outside the ticker loop.
@@ -201,6 +266,13 @@ func (c *Collector) poll() {
 
 					ak := allocKey{ns: key.ns, jobID: key.name, dc: cl.Name}
 					js := c.buildJobStatus(cl.Name, key.ns, stub, allocIndex[ak], restartWindow, alertWindow)
+					js.Links = resolveLinks(grp.Links, linkData{
+						Group:     grp.Name,
+						Job:       js.ID,
+						Namespace: js.Namespace,
+						DC:        js.DC,
+						Var:       cl.Vars,
+					})
 					gs.Jobs = append(gs.Jobs, js)
 					gs.TotalJobs++
 					gs.TotalAllocs += len(js.Allocs)

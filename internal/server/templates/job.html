@@ -37,6 +37,9 @@
       {{ if .Job.Periodic }}
         <span class="badge">periodic</span>
       {{ end }}
+      {{ range .Job.Links }}
+        <a href="{{ .URL }}" target="_blank" rel="noopener" class="ext-link-pill" title="{{ .Label }}">{{ linkIcon .Icon }} {{ .Label }}</a>
+      {{ end }}
     </div>
     {{ if .Job.Periodic }}
     <table class="periodic-info" style="margin-top: 0.75rem; font-size: var(--text-7); color: var(--muted-foreground);">

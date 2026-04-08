@@ -124,6 +124,33 @@
     .theme-toggle:hover {
       background: var(--accent);
     }
+
+    /* External link pills */
+    .ext-links-inline {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      margin-left: 0.5rem;
+      vertical-align: middle;
+    }
+    .ext-link-pill {
+      display: inline-flex; align-items: center; gap: 0.25rem;
+      padding: 0.15rem 0.4rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-medium);
+      background: var(--secondary);
+      text-decoration: none;
+      font-size: var(--text-7);
+      color: var(--secondary-foreground);
+      opacity: 0.8;
+      transition: opacity 0.15s, border-color 0.15s;
+      line-height: 1;
+    }
+    .ext-link-pill:hover {
+      opacity: 1;
+      border-color: var(--accent);
+      text-decoration: none;
+    }
+    h1 .ext-link-pill { font-size: 0.55em; }
+    .ext-icon { width: 14px; height: 14px; vertical-align: middle; }
   </style>
 </head>
 <body>
