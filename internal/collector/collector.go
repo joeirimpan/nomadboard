@@ -473,7 +473,9 @@ func (c *Collector) buildJobStatus(dc, ns string, stub *nomad.JobListStub, alloc
 			}
 		case nomad.AllocClientStatusRunning:
 			for _, t := range a.Tasks {
-				if t.Failed {
+				// Failed can persist from a past setup/restart failure even after
+				// Nomad recovered the task - only flag it if the task is currently dead.
+				if t.Failed && t.State == TaskStateDead {
 					js.Health = Critical
 				} else if t.State == TaskStatePending && t.Restarts > 0 {
 					if js.Health < Warning {
