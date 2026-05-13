@@ -101,7 +101,7 @@
           <td>
             <span class="status-dot {{ statusClass .State }}"></span>
             {{ .State }}
-            {{ if .Failed }}<span class="badge danger">failed</span>{{ end }}
+            {{ if and .Failed (eq .State "dead") }}<span class="badge danger">failed</span>{{ end }}
           </td>
           <td>
             {{ if gt .Restarts 0 }}
