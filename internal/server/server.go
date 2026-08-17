@@ -10,9 +10,9 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/knadh/paginator"
 	"github.com/joeirimpan/nomadboard/internal/collector"
 	"github.com/joeirimpan/nomadboard/internal/config"
+	"github.com/knadh/paginator"
 )
 
 //go:embed templates/*.html
@@ -54,7 +54,7 @@ func baseFuncMap(cfg config.Config) template.FuncMap {
 			}
 			return dcs
 		},
-		"dcShort":     dcShort,
+		"dcShort": dcShort,
 		"restartClass": func(n int) string {
 			if n >= cfg.RestartCrit {
 				return "danger"
@@ -311,7 +311,6 @@ func (s *Server) groupData(slug string, query url.Values) map[string]any {
 		return nil
 	}
 
-
 	p := s.pg.NewFromURL(query)
 	p.SetTotal(len(group.Jobs))
 
@@ -383,8 +382,6 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 		"PollInterval": int(s.cfg.PollDuration().Seconds()),
 	})
 }
-
-
 
 // sseStream sends an initial SSE fragment, then streams updates on each poll.
 func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, tplName string, dataFunc func() map[string]any) {
@@ -491,5 +488,3 @@ func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 }
-
-
