@@ -209,6 +209,8 @@ func (c *Collector) poll() {
 		ns, jobID, dc string
 	}
 	jobIndex := make(map[jobKey]*nomad.JobListStub)
+	// Children of periodic/parameterized parents, keyed by the parent's job key.
+	childIndex := make(map[jobKey][]*nomad.JobListStub)
 	allocIndex := make(map[allocKey][]*nomad.AllocationListStub)
 	for _, r := range results {
 		if r.jobErr != nil {
@@ -216,6 +218,13 @@ func (c *Collector) poll() {
 			continue
 		}
 		for _, j := range r.jobs {
+			// Child IDs look like "<parent>/periodic-<ts>" and never match a
+			// configured pattern, since filepath.Match won't cross the "/".
+			if j.ParentID != "" {
+				pk := jobKey{ns: j.Namespace, name: j.ParentID, dc: r.dc}
+				childIndex[pk] = append(childIndex[pk], j)
+				continue
+			}
 			jobIndex[jobKey{ns: j.Namespace, name: j.ID, dc: r.dc}] = j
 		}
 		if r.alcErr != nil {
@@ -265,7 +274,17 @@ func (c *Collector) poll() {
 					}
 
 					ak := allocKey{ns: key.ns, jobID: key.name, dc: cl.Name}
-					js := c.buildJobStatus(cl.Name, key.ns, stub, allocIndex[ak], restartWindow, alertWindow)
+					allocs := allocIndex[ak]
+
+					// Parents hold no allocations of their own; the work runs
+					// under their children.
+					children := childIndex[key]
+					for _, ch := range children {
+						ck := allocKey{ns: ch.Namespace, jobID: ch.ID, dc: cl.Name}
+						allocs = append(allocs, allocIndex[ck]...)
+					}
+
+					js := c.buildJobStatus(cl.Name, key.ns, stub, allocs, children, restartWindow, alertWindow)
 					js.Links = resolveLinks(grp.Links, linkData{
 						Group:     grp.Name,
 						Job:       js.ID,
@@ -323,7 +342,7 @@ func (c *Collector) poll() {
 }
 
 // buildJobStatus computes health for a job using pre-fetched allocations.
-func (c *Collector) buildJobStatus(dc, ns string, stub *nomad.JobListStub, allocs []*nomad.AllocationListStub, restartWindow, alertWindow time.Duration) JobStatus {
+func (c *Collector) buildJobStatus(dc, ns string, stub *nomad.JobListStub, allocs []*nomad.AllocationListStub, children []*nomad.JobListStub, restartWindow, alertWindow time.Duration) JobStatus {
 	js := JobStatus{
 		ID:        stub.ID,
 		Name:      stub.Name,
@@ -341,11 +360,18 @@ func (c *Collector) buildJobStatus(dc, ns string, stub *nomad.JobListStub, alloc
 			js.ChildrenRunning = int(stub.JobSummary.Children.Running)
 			js.ChildrenDead = int(stub.JobSummary.Children.Dead)
 		}
+		js.LastRun, js.StuckSince = summarizeChildren(children, time.Now())
 		client := c.clients[dc]
-		job, _, err := client.Jobs().Info(stub.ID, &nomad.QueryOptions{Namespace: ns})
+		var (
+			job *nomad.Job
+			err error
+		)
+		if client != nil {
+			job, _, err = client.Jobs().Info(stub.ID, &nomad.QueryOptions{Namespace: ns})
+		}
 		if err != nil {
 			c.log.Error("failed to fetch periodic job info", "dc", dc, "job", stub.ID, "err", err)
-		} else if job.Periodic != nil {
+		} else if job != nil && job.Periodic != nil {
 			if job.Periodic.Spec != nil && *job.Periodic.Spec != "" {
 				js.Crons = []string{*job.Periodic.Spec}
 			}
@@ -451,11 +477,17 @@ func (c *Collector) buildJobStatus(dc, ns string, stub *nomad.JobListStub, alloc
 		js.Allocs = append(js.Allocs, as)
 	}
 
+	// A child pending this long was never placed. The parent stays "running" with
+	// no allocations, so this is the only signal the schedule has stopped.
+	if !js.StuckSince.IsZero() && now.Sub(js.StuckSince) >= alertWindow {
+		js.Health = Critical
+	}
+
 	if stub.Status == JobStatusDead && stub.Type != "batch" {
 		js.Health = Critical
 	} else if js.MaxAlertRestarts >= c.cfg.RestartCrit {
 		js.Health = Critical
-	} else if js.MaxAlertRestarts >= c.cfg.RestartWarn {
+	} else if js.MaxAlertRestarts >= c.cfg.RestartWarn && js.Health < Warning {
 		js.Health = Warning
 	}
 

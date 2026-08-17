@@ -67,7 +67,11 @@
         <td>{{ .DC }}</td>
         <td>
           {{ if .Periodic }}
-            <span style="color: var(--muted-foreground);">{{ .ChildrenDead }} done{{ if gt .ChildrenRunning 0 }}, {{ .ChildrenRunning }} active{{ end }}</span>
+            {{ if not .StuckSince.IsZero }}
+              <span style="color: var(--status-critical);" title="oldest queued run still has no placement">run queued {{ fmtTime .StuckSince }}, never started</span>
+            {{ else }}
+              <span style="color: var(--muted-foreground);">{{ .ChildrenDead }} done{{ if gt .ChildrenRunning 0 }}, {{ .ChildrenRunning }} active{{ end }}</span>
+            {{ end }}
           {{ else }}
             <span class="status-dot {{ statusClass .Status }}"></span>
             {{ .Status }}

@@ -55,6 +55,18 @@
         <td style="padding: 0.1rem 0;">{{ fmtTime .Job.NextRun }}</td>
       </tr>
       {{ end }}
+      {{ if not .Job.LastRun.IsZero }}
+      <tr>
+        <td style="padding: 0.1rem 0.5rem 0.1rem 0; color: var(--muted-foreground);">last run</td>
+        <td style="padding: 0.1rem 0;">{{ fmtTime .Job.LastRun }}</td>
+      </tr>
+      {{ end }}
+      {{ if not .Job.StuckSince.IsZero }}
+      <tr>
+        <td style="padding: 0.1rem 0.5rem 0.1rem 0; color: var(--muted-foreground);">queued run</td>
+        <td style="padding: 0.1rem 0; color: var(--status-critical);">submitted {{ fmtTime .Job.StuckSince }} and never placed</td>
+      </tr>
+      {{ end }}
     </table>
     {{ end }}
   </div>

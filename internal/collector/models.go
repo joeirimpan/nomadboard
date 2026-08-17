@@ -5,7 +5,7 @@ import "time"
 type Health int
 
 const (
-	Healthy  Health = iota
+	Healthy Health = iota
 	Warning
 	Critical
 )
@@ -76,6 +76,9 @@ type JobStatus struct {
 	ChildrenPending int
 	ChildrenRunning int
 	ChildrenDead    int
+
+	LastRun    time.Time
+	StuckSince time.Time // submit time of the oldest child still pending
 
 	// Restart counts within the display window (shown in UI).
 	TotalRestarts int
