@@ -38,6 +38,12 @@ restart_alert_window: "30m"
 restart_warn: 1
 restart_crit: 5
 
+# How often to send a keepalive comment on idle SSE streams (seconds).
+# Must be lower than the idle timeout of any proxy in front of the server
+# (e.g. HAProxy `timeout client`), otherwise live updates get cut and the
+# browser reconnects in a loop. Default: 5
+sse_keepalive: 5
+
 # HTTP listen address.
 listen: ":9999"
 

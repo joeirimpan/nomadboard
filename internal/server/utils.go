@@ -116,3 +116,12 @@ func slugify(s string) string {
 func dcShort(dc string) string {
 	return dc
 }
+
+// writeSSEComment writes an SSE comment line. EventSource ignores comments, so
+// they keep a connection alive without triggering a client re-render.
+func writeSSEComment(w http.ResponseWriter) {
+	fmt.Fprintf(w, ": keepalive\n\n")
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+}

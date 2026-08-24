@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/joeirimpan/nomadboard/internal/collector"
 	"github.com/joeirimpan/nomadboard/internal/config"
@@ -423,10 +424,17 @@ func (s *Server) sseStream(w http.ResponseWriter, r *http.Request, tplName strin
 	ch := s.collector.Subscribe()
 	defer s.collector.Unsubscribe(ch)
 
+	// The stream is silent between polls, so comment lines keep proxies from
+	// closing it as idle.
+	keepalive := time.NewTicker(s.cfg.SSEKeepaliveDuration())
+	defer keepalive.Stop()
+
 	for {
 		select {
 		case <-r.Context().Done():
 			return
+		case <-keepalive.C:
+			writeSSEComment(w)
 		case <-ch:
 			data := dataFunc()
 			if data == nil {

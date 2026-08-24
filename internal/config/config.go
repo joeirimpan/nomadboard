@@ -77,6 +77,7 @@ type Config struct {
 	MaskNodeIP      bool      `huml:"mask_node_ip"`
 	Timezone        string    `huml:"timezone"`
 	MaxSSEConns     int       `huml:"max_sse_conns"`
+	SSEKeepalive    int64     `huml:"sse_keepalive"`
 	Listen          string    `huml:"listen"`
 	Groups          []Group   `huml:"groups"`
 
@@ -126,6 +127,15 @@ func (c Config) PollDuration() time.Duration {
 		return 30 * time.Second
 	}
 	return time.Duration(c.PollInterval) * time.Second
+}
+
+// SSEKeepaliveDuration returns the SSE keepalive interval. Must stay below the
+// idle timeout of any proxy in front of the server. Defaults to 5s.
+func (c Config) SSEKeepaliveDuration() time.Duration {
+	if c.SSEKeepalive <= 0 {
+		return 5 * time.Second
+	}
+	return time.Duration(c.SSEKeepalive) * time.Second
 }
 
 // Load reads and parses a config file.
