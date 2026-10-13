@@ -114,3 +114,34 @@ func TestLoadErrors(t *testing.T) {
 		t.Fatal("expected error for missing clusters")
 	}
 }
+
+func TestLoadRestartDefaults(t *testing.T) {
+	f, err := os.CreateTemp("", "config-*.huml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(f.Name())
+	f.WriteString(`clusters::
+  - ::
+    name: "dc1"
+    address: "http://localhost:4646"
+
+groups::
+  - ::
+    name: "x"
+    jobs::
+      - "z"
+`)
+	f.Close()
+
+	cfg, err := Load(f.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RestartWarn != 1 {
+		t.Fatalf("expected default restart_warn 1, got %d", cfg.RestartWarn)
+	}
+	if cfg.RestartCrit != 5 {
+		t.Fatalf("expected default restart_crit 5, got %d", cfg.RestartCrit)
+	}
+}
