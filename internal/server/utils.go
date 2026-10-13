@@ -125,3 +125,28 @@ func writeSSEComment(w http.ResponseWriter) {
 		f.Flush()
 	}
 }
+
+// shortDuration formats d without trailing zero units, e.g. "24h" not "24h0m0s".
+func shortDuration(d time.Duration) string {
+	s := d.String()
+	if strings.HasSuffix(s, "m0s") {
+		s = s[:len(s)-2]
+	}
+	if strings.HasSuffix(s, "h0m") {
+		s = s[:len(s)-2]
+	}
+	return s
+}
+
+// lastRestart returns the most recent task restart across a job's allocations.
+func lastRestart(j collector.JobStatus) time.Time {
+	var last time.Time
+	for _, a := range j.Allocs {
+		for _, t := range a.Tasks {
+			if t.LastRestart.After(last) {
+				last = t.LastRestart
+			}
+		}
+	}
+	return last
+}

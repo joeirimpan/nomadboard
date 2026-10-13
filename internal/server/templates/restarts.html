@@ -1,0 +1,78 @@
+{{ define "title" }}Restarts - {{ .Name }}{{ end }}
+
+{{ define "content" }}
+<span id="health-status" data-health="{{ healthClass .Health }}" hidden></span>
+<div class="topbar">
+  <div>
+    <nav aria-label="Breadcrumb">
+      <ol class="unstyled hstack" style="font-size: var(--text-7)">
+        <li><a href="/" class="unstyled">Dashboard</a></li>
+        <li aria-hidden="true">/</li>
+        <li><strong>Restarts</strong></li>
+      </ol>
+    </nav>
+    <h1>Restarts</h1>
+    <div class="meta-row">
+      <span>Jobs restarted in the last {{ .Window }}: {{ len .Jobs }}</span>
+      <span>alert window: {{ .AlertWindow }}</span>
+    </div>
+  </div>
+  <span class="refresh-note">
+    {{ fmtTime .UpdatedAt }}
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>
+  </span>
+</div>
+
+{{ if eq (len .Jobs) 0 }}
+<div role="alert">
+  No restarts in the last {{ .Window }}.
+</div>
+{{ else }}
+<div class="table">
+  <table>
+    <thead>
+      <tr>
+        <th>Job</th>
+        <th>Group</th>
+        <th>Namespace</th>
+        <th>Datacenter</th>
+        <th style="text-align: center">Last {{ .Window }}</th>
+        <th style="text-align: center">Last {{ .AlertWindow }}</th>
+        <th>Last restart</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Jobs }}
+      <tr>
+        <td>
+          <span class="status-dot {{ healthClass .Job.Health }}"></span>
+          <a href="/job/{{ .Job.Namespace }}/{{ .Job.ID }}?dc={{ .Job.DC }}">{{ .Job.Name }}</a>
+          {{ if .Job.Links }}
+          <span class="ext-links-inline">
+            {{ range .Job.Links }}
+              <a href="{{ .URL }}" target="_blank" rel="noopener" class="ext-link-pill" title="{{ .Label }}">{{ linkIcon .Icon }}</a>
+            {{ end }}
+          </span>
+          {{ end }}
+        </td>
+        <td>{{ if .Group }}<a href="/group/{{ slugify .Group }}" class="unstyled">{{ .Group }}</a>{{ else }}<span style="color: var(--muted-foreground)">-</span>{{ end }}</td>
+        <td>{{ .Job.Namespace }}</td>
+        <td>{{ .Job.DC }}</td>
+        <td style="text-align: center">
+          <span class="badge {{ restartClass .Job.MaxAlertRestarts }}">{{ .Job.TotalRestarts }}</span>
+        </td>
+        <td style="text-align: center">
+          {{ if gt .Job.TotalAlertRestarts 0 }}
+            <span class="badge {{ restartClass .Job.MaxAlertRestarts }}">{{ .Job.TotalAlertRestarts }}</span>
+          {{ else }}
+            <span style="color: var(--muted-foreground)">-</span>
+          {{ end }}
+        </td>
+        <td style="white-space: nowrap;">{{ fmtTime (lastRestart .Job) }}</td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+</div>
+{{ end }}
+{{ end }}

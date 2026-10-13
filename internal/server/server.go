@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ func baseFuncMap(cfg config.Config) template.FuncMap {
 		"statusClass": statusClass,
 		"typeBadge":   typeBadge,
 		"timeAgo":     timeAgo,
+		"lastRestart": lastRestart,
 		"fmtTime":     fmtTimeIn(cfg.Location()),
 		"slugify":     slugify,
 		"sortedDCs": func() []string {
@@ -173,7 +175,7 @@ func parseFragment(name string, funcMap template.FuncMap) (*template.Template, e
 func New(cfg config.Config, coll *collector.Collector, log *slog.Logger) (*Server, error) {
 	funcMap := baseFuncMap(cfg)
 
-	pages := []string{"dashboard.html", "group.html", "job.html"}
+	pages := []string{"dashboard.html", "group.html", "job.html", "crons.html", "issues.html", "restarts.html", "unmatched.html"}
 	tpls := make(map[string]*template.Template, len(pages))
 	frags := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
@@ -211,9 +213,17 @@ func New(cfg config.Config, coll *collector.Collector, log *slog.Logger) (*Serve
 	s.mux.HandleFunc("GET /", s.handleDashboard)
 	s.mux.HandleFunc("GET /group/{slug}", s.handleGroup)
 	s.mux.HandleFunc("GET /job/{ns}/{id}", s.handleJob)
+	s.mux.HandleFunc("GET /crons", s.handleCrons)
+	s.mux.HandleFunc("GET /issues", s.handleIssues)
+	s.mux.HandleFunc("GET /restarts", s.handleRestarts)
+	s.mux.HandleFunc("GET /unmatched", s.handleUnmatched)
 	s.mux.HandleFunc("GET /events/dashboard", s.handleSSEDashboard)
 	s.mux.HandleFunc("GET /events/group/{slug}", s.handleSSEGroup)
 	s.mux.HandleFunc("GET /events/job/{ns}/{id}", s.handleSSEJob)
+	s.mux.HandleFunc("GET /events/crons", s.handleSSECrons)
+	s.mux.HandleFunc("GET /events/issues", s.handleSSEIssues)
+	s.mux.HandleFunc("GET /events/restarts", s.handleSSERestarts)
+	s.mux.HandleFunc("GET /events/unmatched", s.handleSSEUnmatched)
 
 	return s, nil
 }
@@ -268,14 +278,19 @@ func (s *Server) dashboardData(query url.Values) map[string]any {
 		end = len(snap.Groups)
 	}
 
+	all := allJobs(snap)
 	return map[string]any{
-		"Name":         s.cfg.DisplayName(),
-		"AllGroups":    snap.Groups,
-		"Groups":       snap.Groups[start:end],
-		"Pgn":          p,
-		"UpdatedAt":    snap.UpdatedAt,
-		"PollInterval": int(s.cfg.PollDuration().Seconds()),
-		"Clusters":     s.cfg.Clusters,
+		"Name":           s.cfg.DisplayName(),
+		"IssueCount":     len(issueJobs(all)),
+		"RestartCount":   len(restartJobs(all)),
+		"CronCount":      len(snap.Crons),
+		"UnmatchedCount": len(snap.Unmatched),
+		"AllGroups":      snap.Groups,
+		"Groups":         snap.Groups[start:end],
+		"Pgn":            p,
+		"UpdatedAt":      snap.UpdatedAt,
+		"PollInterval":   int(s.cfg.PollDuration().Seconds()),
+		"Clusters":       s.cfg.Clusters,
 	}
 }
 
@@ -346,21 +361,272 @@ func (s *Server) handleGroup(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "group.html", data)
 }
 
-func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
-	ns := r.PathValue("ns")
-	id := r.PathValue("id")
-	dc := r.URL.Query().Get("dc")
+// cronSection is a block of crons on the crons page: one per group, then one
+// per namespace for crons no group matches.
+type cronSection struct {
+	Name      string
+	GroupSlug string // empty for namespace sections
+	Crons     []collector.GroupedJob
+	Health    collector.Health
+	Healthy   int
+}
 
+// cronSections splits crons into group sections in config order, followed by
+// namespace sections for ungrouped crons sorted by namespace.
+func cronSections(groups []collector.GroupStatus, crons []collector.GroupedJob) []cronSection {
+	byGroup := make(map[string]*cronSection)
+	byNS := make(map[string]*cronSection)
+	for _, c := range crons {
+		var sec *cronSection
+		if c.Group != "" {
+			if sec = byGroup[c.Group]; sec == nil {
+				sec = &cronSection{Name: c.Group, GroupSlug: slugify(c.Group)}
+				byGroup[c.Group] = sec
+			}
+		} else {
+			if sec = byNS[c.Job.Namespace]; sec == nil {
+				sec = &cronSection{Name: c.Job.Namespace}
+				byNS[c.Job.Namespace] = sec
+			}
+		}
+		sec.Crons = append(sec.Crons, c)
+		if c.Job.Health > sec.Health {
+			sec.Health = c.Job.Health
+		}
+		if c.Job.Health == collector.Healthy {
+			sec.Healthy++
+		}
+	}
+
+	out := make([]cronSection, 0, len(byGroup)+len(byNS))
+	for _, g := range groups {
+		if sec, ok := byGroup[g.Name]; ok {
+			out = append(out, *sec)
+		}
+	}
+	namespaces := make([]string, 0, len(byNS))
+	for ns := range byNS {
+		namespaces = append(namespaces, ns)
+	}
+	sort.Strings(namespaces)
+	for _, ns := range namespaces {
+		out = append(out, *byNS[ns])
+	}
+	return out
+}
+
+// cronsData builds template data for the crons page.
+func (s *Server) cronsData() map[string]any {
 	snap := s.collector.Snapshot()
+	sections := cronSections(snap.Groups, snap.Crons)
 
-	var job *collector.JobStatus
-	var groupName string
+	health := collector.Healthy
+	healthy := 0
+	for _, sec := range sections {
+		if sec.Health > health {
+			health = sec.Health
+		}
+		healthy += sec.Healthy
+	}
+
+	return map[string]any{
+		"Name":         s.cfg.DisplayName(),
+		"Sections":     sections,
+		"Total":        len(snap.Crons),
+		"HealthyCount": healthy,
+		"Health":       health,
+		"UpdatedAt":    snap.UpdatedAt,
+		"PollInterval": int(s.cfg.PollDuration().Seconds()),
+	}
+}
+
+// allJobs returns every grouped job, deduplicated across groups, followed by
+// the crons no group matches.
+func allJobs(snap collector.Snapshot) []collector.GroupedJob {
+	type key struct{ dc, ns, id string }
+	seen := make(map[key]bool)
+	var out []collector.GroupedJob
+	add := func(group string, j collector.JobStatus) {
+		k := key{j.DC, j.Namespace, j.ID}
+		if seen[k] {
+			return
+		}
+		seen[k] = true
+		out = append(out, collector.GroupedJob{Group: group, Job: j})
+	}
 	for _, g := range snap.Groups {
+		for _, j := range g.Jobs {
+			add(g.Name, j)
+		}
+	}
+	for _, c := range snap.Crons {
+		add(c.Group, c.Job)
+	}
+	return out
+}
+
+// lessJob orders jobs by name, then datacenter, then namespace.
+func lessJob(a, b collector.JobStatus) bool {
+	if a.Name != b.Name {
+		return a.Name < b.Name
+	}
+	if a.DC != b.DC {
+		return a.DC < b.DC
+	}
+	return a.Namespace < b.Namespace
+}
+
+// issueJobs returns jobs in warning or critical, worst first.
+func issueJobs(all []collector.GroupedJob) []collector.GroupedJob {
+	var out []collector.GroupedJob
+	for _, gj := range all {
+		if gj.Job.Health != collector.Healthy {
+			out = append(out, gj)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Job, out[j].Job
+		if a.Health != b.Health {
+			return a.Health > b.Health
+		}
+		return lessJob(a, b)
+	})
+	return out
+}
+
+// restartJobs returns jobs with restarts in the display window, most first.
+func restartJobs(all []collector.GroupedJob) []collector.GroupedJob {
+	var out []collector.GroupedJob
+	for _, gj := range all {
+		if gj.Job.TotalRestarts > 0 {
+			out = append(out, gj)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Job, out[j].Job
+		if a.TotalRestarts != b.TotalRestarts {
+			return a.TotalRestarts > b.TotalRestarts
+		}
+		return lessJob(a, b)
+	})
+	return out
+}
+
+func worstHealth(jobs []collector.GroupedJob) collector.Health {
+	h := collector.Healthy
+	for _, gj := range jobs {
+		if gj.Job.Health > h {
+			h = gj.Job.Health
+		}
+	}
+	return h
+}
+
+func (s *Server) issuesData() map[string]any {
+	snap := s.collector.Snapshot()
+	jobs := issueJobs(allJobs(snap))
+	return map[string]any{
+		"Name":         s.cfg.DisplayName(),
+		"Jobs":         jobs,
+		"Health":       worstHealth(jobs),
+		"UpdatedAt":    snap.UpdatedAt,
+		"PollInterval": int(s.cfg.PollDuration().Seconds()),
+	}
+}
+
+func (s *Server) restartsData() map[string]any {
+	snap := s.collector.Snapshot()
+	jobs := restartJobs(allJobs(snap))
+	return map[string]any{
+		"Name":         s.cfg.DisplayName(),
+		"Jobs":         jobs,
+		"Health":       worstHealth(jobs),
+		"Window":       shortDuration(s.cfg.RestartWindow()),
+		"AlertWindow":  shortDuration(s.cfg.RestartAlertWindow()),
+		"UpdatedAt":    snap.UpdatedAt,
+		"PollInterval": int(s.cfg.PollDuration().Seconds()),
+	}
+}
+
+// unmatchedData builds paginated template data for jobs no group matches.
+func (s *Server) unmatchedData(query url.Values) map[string]any {
+	snap := s.collector.Snapshot()
+	jobs := snap.Unmatched
+
+	p := s.pg.NewFromURL(query)
+	p.SetTotal(len(jobs))
+
+	start := p.Offset
+	end := p.Offset + p.Limit
+	if start > len(jobs) {
+		start = len(jobs)
+	}
+	if end > len(jobs) {
+		end = len(jobs)
+	}
+
+	return map[string]any{
+		"Name":         s.cfg.DisplayName(),
+		"Jobs":         jobs[start:end],
+		"Total":        len(jobs),
+		"Pgn":          p,
+		"UpdatedAt":    snap.UpdatedAt,
+		"PollInterval": int(s.cfg.PollDuration().Seconds()),
+	}
+}
+
+func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "issues.html", s.issuesData())
+}
+
+func (s *Server) handleSSEIssues(w http.ResponseWriter, r *http.Request) {
+	s.sseStream(w, r, "issues.html", s.issuesData)
+}
+
+func (s *Server) handleRestarts(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "restarts.html", s.restartsData())
+}
+
+func (s *Server) handleSSERestarts(w http.ResponseWriter, r *http.Request) {
+	s.sseStream(w, r, "restarts.html", s.restartsData)
+}
+
+func (s *Server) handleUnmatched(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "unmatched.html", s.unmatchedData(r.URL.Query()))
+}
+
+func (s *Server) handleSSEUnmatched(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	s.sseStream(w, r, "unmatched.html", func() map[string]any {
+		return s.unmatchedData(query)
+	})
+}
+
+func (s *Server) handleCrons(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "crons.html", s.cronsData())
+}
+
+func (s *Server) handleSSECrons(w http.ResponseWriter, r *http.Request) {
+	s.sseStream(w, r, "crons.html", s.cronsData)
+}
+
+// jobData builds template data for a job, looking in groups first and then in
+// the cron list for periodic jobs no group matches. Returns nil if not found.
+func (s *Server) jobData(ns, id, dc string) map[string]any {
+	snap := s.collector.Snapshot()
+	match := func(j collector.JobStatus) bool {
+		return j.ID == id && j.Namespace == ns && (dc == "" || j.DC == dc)
+	}
+
+	var (
+		job       *collector.JobStatus
+		groupName string
+	)
+	for gi := range snap.Groups {
+		g := &snap.Groups[gi]
 		for i := range g.Jobs {
-			j := &g.Jobs[i]
-			if j.ID == id && j.Namespace == ns && (dc == "" || j.DC == dc) {
-				job = j
-				groupName = g.Name
+			if match(g.Jobs[i]) {
+				job, groupName = &g.Jobs[i], g.Name
 				break
 			}
 		}
@@ -368,20 +634,35 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-
 	if job == nil {
-		http.NotFound(w, r)
-		return
+		for i := range snap.Crons {
+			if match(snap.Crons[i].Job) {
+				job, groupName = &snap.Crons[i].Job, snap.Crons[i].Group
+				break
+			}
+		}
+	}
+	if job == nil {
+		return nil
 	}
 
-	s.render(w, "job.html", map[string]any{
+	return map[string]any{
 		"Name":         s.cfg.DisplayName(),
 		"Job":          job,
 		"GroupName":    groupName,
 		"GroupSlug":    slugify(groupName),
 		"UpdatedAt":    snap.UpdatedAt,
 		"PollInterval": int(s.cfg.PollDuration().Seconds()),
-	})
+	}
+}
+
+func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
+	data := s.jobData(r.PathValue("ns"), r.PathValue("id"), r.URL.Query().Get("dc"))
+	if data == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.render(w, "job.html", data)
 }
 
 // sseStream sends an initial SSE fragment, then streams updates on each poll.
@@ -477,22 +758,6 @@ func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
 	dc := r.URL.Query().Get("dc")
 
 	s.sseStream(w, r, "job.html", func() map[string]any {
-		snap := s.collector.Snapshot()
-		for _, g := range snap.Groups {
-			for i := range g.Jobs {
-				j := &g.Jobs[i]
-				if j.ID == id && j.Namespace == ns && (dc == "" || j.DC == dc) {
-					return map[string]any{
-						"Name":         s.cfg.DisplayName(),
-						"Job":          j,
-						"GroupName":    g.Name,
-						"GroupSlug":    slugify(g.Name),
-						"UpdatedAt":    snap.UpdatedAt,
-						"PollInterval": int(s.cfg.PollDuration().Seconds()),
-					}
-				}
-			}
-		}
-		return nil
+		return s.jobData(ns, id, dc)
 	})
 }

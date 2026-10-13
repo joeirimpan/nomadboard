@@ -1,0 +1,95 @@
+{{ define "title" }}Cron jobs - {{ .Name }}{{ end }}
+
+{{ define "content" }}
+<span id="health-status" data-health="{{ healthClass .Health }}" hidden></span>
+<div class="topbar">
+  <div>
+    <nav aria-label="Breadcrumb">
+      <ol class="unstyled hstack" style="font-size: var(--text-7)">
+        <li><a href="/" class="unstyled">Dashboard</a></li>
+        <li aria-hidden="true">/</li>
+        <li><strong>Cron jobs</strong></li>
+      </ol>
+    </nav>
+    <h1>Cron jobs</h1>
+    <div class="meta-row">
+      <span>{{ .HealthyCount }}/{{ .Total }} cron jobs healthy</span>
+    </div>
+  </div>
+  <span class="refresh-note">
+    {{ fmtTime .UpdatedAt }}
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>
+  </span>
+</div>
+
+{{ if eq .Total 0 }}
+<div role="alert" data-variant="warning">
+  No periodic jobs found.
+</div>
+{{ end }}
+
+{{ range .Sections }}
+<article class="card" style="margin-bottom: 1rem;">
+  <header>
+    <h3>
+      <span class="status-dot {{ healthClass .Health }}"></span>
+      {{ if .GroupSlug }}
+        <a href="/group/{{ .GroupSlug }}" class="unstyled">{{ .Name }}</a>
+      {{ else }}
+        {{ .Name }} <small style="color: var(--muted-foreground);">(namespace, no group)</small>
+      {{ end }}
+    </h3>
+    <div class="meta-row">
+      <span>{{ .Healthy }}/{{ len .Crons }} healthy</span>
+    </div>
+  </header>
+
+  <div class="table">
+    <table>
+      <thead>
+        <tr>
+          <th>Job</th>
+          <th>Namespace</th>
+          <th>Datacenter</th>
+          <th>Schedule</th>
+          <th>Last run</th>
+          <th>Next run</th>
+          <th>Runs</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{ range .Crons }}
+        <tr>
+          <td>
+            <span class="status-dot {{ healthClass .Job.Health }}"></span>
+            <a href="/job/{{ .Job.Namespace }}/{{ .Job.ID }}?dc={{ .Job.DC }}">{{ .Job.Name }}</a>
+            {{ if .Job.Links }}
+            <span class="ext-links-inline">
+              {{ range .Job.Links }}
+                <a href="{{ .URL }}" target="_blank" rel="noopener" class="ext-link-pill" title="{{ .Label }}">{{ linkIcon .Icon }}</a>
+              {{ end }}
+            </span>
+            {{ end }}
+          </td>
+          <td>{{ .Job.Namespace }}</td>
+          <td>{{ .Job.DC }}</td>
+          <td>
+            {{ range .Job.Crons }}<code>{{ . }}</code><br>{{ else }}<span style="color: var(--muted-foreground)">-</span>{{ end }}
+          </td>
+          <td style="white-space: nowrap;">{{ fmtTime .Job.LastRun }}</td>
+          <td style="white-space: nowrap;">{{ fmtTime .Job.NextRun }}</td>
+          <td>
+            {{ if not .Job.StuckSince.IsZero }}
+              <span style="color: var(--status-critical);" title="oldest queued run still has no placement">run queued {{ fmtTime .Job.StuckSince }}, never started</span>
+            {{ else }}
+              <span style="color: var(--muted-foreground);">{{ .Job.ChildrenDead }} done{{ if gt .Job.ChildrenRunning 0 }}, {{ .Job.ChildrenRunning }} active{{ end }}</span>
+            {{ end }}
+          </td>
+        </tr>
+        {{ end }}
+      </tbody>
+    </table>
+  </div>
+</article>
+{{ end }}
+{{ end }}

@@ -202,12 +202,6 @@ func (c *Collector) poll() {
 	}
 	wg.Wait()
 
-	type jobKey struct {
-		ns, name, dc string
-	}
-	type allocKey struct {
-		ns, jobID, dc string
-	}
 	jobIndex := make(map[jobKey]*nomad.JobListStub)
 	// Children of periodic/parameterized parents, keyed by the parent's job key.
 	childIndex := make(map[jobKey][]*nomad.JobListStub)
@@ -239,6 +233,10 @@ func (c *Collector) poll() {
 
 	restartWindow := c.cfg.RestartWindow()
 	alertWindow := c.cfg.RestartAlertWindow()
+
+	// Periodic jobs already built under a group, reused for the cron list.
+	grouped := make(map[jobKey]GroupedJob)
+	inGroup := make(map[jobKey]bool)
 
 	groups := make([]GroupStatus, 0, len(c.cfg.Groups))
 	for _, grp := range c.cfg.Groups {
@@ -293,6 +291,10 @@ func (c *Collector) poll() {
 						Var:       cl.Vars,
 					})
 					gs.Jobs = append(gs.Jobs, js)
+					inGroup[key] = true
+					if _, ok := grouped[key]; js.Periodic && !ok {
+						grouped[key] = GroupedJob{Group: grp.Name, Job: js}
+					}
 					gs.TotalJobs++
 					gs.TotalAllocs += len(js.Allocs)
 					if js.Health == Healthy {
@@ -329,6 +331,8 @@ func (c *Collector) poll() {
 
 	snap := Snapshot{
 		Groups:    groups,
+		Crons:     c.buildCrons(jobIndex, childIndex, allocIndex, grouped, restartWindow, alertWindow),
+		Unmatched: unmatchedJobs(jobIndex, inGroup),
 		UpdatedAt: time.Now(),
 	}
 
@@ -338,7 +342,82 @@ func (c *Collector) poll() {
 
 	c.notify()
 
-	c.log.Info("poll complete", "groups", len(groups), "duration", time.Since(start).Round(time.Millisecond))
+	c.log.Info("poll complete", "groups", len(groups), "crons", len(snap.Crons), "duration", time.Since(start).Round(time.Millisecond))
+}
+
+// unmatchedJobs lists jobs no group matched. Only list-level fields are set;
+// allocations and health are not computed for them.
+func unmatchedJobs(jobIndex map[jobKey]*nomad.JobListStub, matched map[jobKey]bool) []JobStatus {
+	var out []JobStatus
+	for key, stub := range jobIndex {
+		if matched[key] {
+			continue
+		}
+		out = append(out, JobStatus{
+			ID:        stub.ID,
+			Name:      stub.Name,
+			Namespace: key.ns,
+			Type:      stub.Type,
+			Status:    stub.Status,
+			DC:        key.dc,
+			Periodic:  stub.Periodic,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Namespace != b.Namespace {
+			return a.Namespace < b.Namespace
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.DC < b.DC
+	})
+	return out
+}
+
+type jobKey struct {
+	ns, name, dc string
+}
+
+type allocKey struct {
+	ns, jobID, dc string
+}
+
+// buildCrons lists every periodic job across all namespaces, reusing the status
+// already built for jobs matched by a group.
+func (c *Collector) buildCrons(jobIndex map[jobKey]*nomad.JobListStub, childIndex map[jobKey][]*nomad.JobListStub, allocIndex map[allocKey][]*nomad.AllocationListStub, grouped map[jobKey]GroupedJob, restartWindow, alertWindow time.Duration) []GroupedJob {
+	var out []GroupedJob
+	for key, stub := range jobIndex {
+		if !stub.Periodic {
+			continue
+		}
+		if cs, ok := grouped[key]; ok {
+			out = append(out, cs)
+			continue
+		}
+
+		allocs := allocIndex[allocKey{ns: key.ns, jobID: key.name, dc: key.dc}]
+		children := childIndex[key]
+		for _, ch := range children {
+			allocs = append(allocs, allocIndex[allocKey{ns: ch.Namespace, jobID: ch.ID, dc: key.dc}]...)
+		}
+		out = append(out, GroupedJob{
+			Job: c.buildJobStatus(key.dc, key.ns, stub, allocs, children, restartWindow, alertWindow),
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Job, out[j].Job
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if a.DC != b.DC {
+			return a.DC < b.DC
+		}
+		return a.Namespace < b.Namespace
+	})
+	return out
 }
 
 // buildJobStatus computes health for a job using pre-fetched allocations.

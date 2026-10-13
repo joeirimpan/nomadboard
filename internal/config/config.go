@@ -162,6 +162,12 @@ func Load(path string) (Config, error) {
 	if cfg.PerPage <= 0 {
 		cfg.PerPage = 20
 	}
+	if cfg.RestartWarn <= 0 {
+		cfg.RestartWarn = 1
+	}
+	if cfg.RestartCrit <= 0 {
+		cfg.RestartCrit = 5
+	}
 	if cfg.MaxSSEConns <= 0 {
 		cfg.MaxSSEConns = 128
 	}

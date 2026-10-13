@@ -44,7 +44,15 @@ type ResolvedLink struct {
 // Snapshot is the full state produced by each poll cycle.
 type Snapshot struct {
 	Groups    []GroupStatus
+	Crons     []GroupedJob
+	Unmatched []JobStatus
 	UpdatedAt time.Time
+}
+
+// GroupedJob is a job and the first group that matched it, if any.
+type GroupedJob struct {
+	Group string
+	Job   JobStatus
 }
 
 type GroupStatus struct {

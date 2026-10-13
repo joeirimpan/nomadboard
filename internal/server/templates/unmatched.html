@@ -1,0 +1,86 @@
+{{ define "title" }}Unmatched jobs - {{ .Name }}{{ end }}
+
+{{ define "content" }}
+<div class="topbar">
+  <div>
+    <nav aria-label="Breadcrumb">
+      <ol class="unstyled hstack" style="font-size: var(--text-7)">
+        <li><a href="/" class="unstyled">Dashboard</a></li>
+        <li aria-hidden="true">/</li>
+        <li><strong>Unmatched jobs</strong></li>
+      </ol>
+    </nav>
+    <h1>Unmatched jobs</h1>
+    <div class="meta-row">
+      <span>Jobs not matched by any group: {{ .Total }}</span>
+    </div>
+  </div>
+  <span class="refresh-note">
+    {{ fmtTime .UpdatedAt }}
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>
+  </span>
+</div>
+
+{{ if eq .Total 0 }}
+<div role="alert">
+  Every job is matched by a group.
+</div>
+{{ else }}
+<div class="table">
+  <table>
+    <thead>
+      <tr>
+        <th>Job</th>
+        <th>Namespace</th>
+        <th>Datacenter</th>
+        <th>Type</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Jobs }}
+      <tr>
+        <td>
+          {{ if .Periodic }}
+            <a href="/job/{{ .Namespace }}/{{ .ID }}?dc={{ .DC }}">{{ .Name }}</a>
+          {{ else }}
+            {{ .Name }}
+          {{ end }}
+        </td>
+        <td>{{ .Namespace }}</td>
+        <td>{{ .DC }}</td>
+        <td>
+          <span class="badge {{ typeBadge .Type }}">{{ .Type }}</span>
+          {{ if .Periodic }}<span class="badge">periodic</span>{{ end }}
+        </td>
+        <td>
+          <span class="status-dot {{ statusClass .Status }}"></span>
+          {{ .Status }}
+        </td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+</div>
+{{ end }}
+
+{{ if gt .Pgn.TotalPages 1 }}
+<nav aria-label="Pagination" style="margin-top: 1rem; display: flex; justify-content: center;">
+  <menu class="buttons">
+    {{ if gt .Pgn.Page 1 }}
+      <li><a href="?page={{ subtract .Pgn.Page 1 }}" class="button outline small">← Previous</a></li>
+    {{ end }}
+    {{ range .Pgn.Pages }}
+      {{ if eq . $.Pgn.Page }}
+        <li><a href="?page={{ . }}" class="button small" aria-current="page">{{ . }}</a></li>
+      {{ else }}
+        <li><a href="?page={{ . }}" class="button outline small">{{ . }}</a></li>
+      {{ end }}
+    {{ end }}
+    {{ if lt .Pgn.Page .Pgn.TotalPages }}
+      <li><a href="?page={{ add .Pgn.Page 1 }}" class="button outline small">Next →</a></li>
+    {{ end }}
+  </menu>
+</nav>
+{{ end }}
+{{ end }}
