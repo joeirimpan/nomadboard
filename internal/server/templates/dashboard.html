@@ -6,7 +6,10 @@
   <div>
     <h1>{{ .Name }}</h1>
     <div class="meta-row">
-      <a href="/crons">Cron jobs</a>
+      <a href="/issues">Issues ({{ .IssueCount }})</a>
+      <a href="/restarts">Restarts ({{ .RestartCount }})</a>
+      <a href="/crons">Cron jobs ({{ .CronCount }})</a>
+      <a href="/unmatched">Unmatched jobs ({{ .UnmatchedCount }})</a>
     </div>
   </div>
   <span class="refresh-note">

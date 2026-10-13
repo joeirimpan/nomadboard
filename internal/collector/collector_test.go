@@ -176,7 +176,7 @@ func TestBuildCrons(t *testing.T) {
 		{ns: "default", name: "web", dc: "dc1"}:       service,
 	}
 	groupedKey := jobKey{ns: "default", name: "batch-job", dc: "dc1"}
-	inGroup := map[jobKey]CronStatus{
+	inGroup := map[jobKey]GroupedJob{
 		groupedKey: {Group: "Batch", Job: JobStatus{ID: "batch-job", Name: "batch-job", Namespace: "default", DC: "dc1", Periodic: true}},
 	}
 
@@ -189,5 +189,25 @@ func TestBuildCrons(t *testing.T) {
 	}
 	if got[1].Job.ID != "batch-job" || got[1].Group != "Batch" {
 		t.Errorf("got[1] = %+v, want batch-job in group Batch", got[1])
+	}
+}
+
+func TestUnmatchedJobs(t *testing.T) {
+	stub := func(ns, id string) *nomad.JobListStub {
+		return &nomad.JobListStub{ID: id, Name: id, Namespace: ns, Type: "service", Status: JobStatusRunning}
+	}
+	jobIndex := map[jobKey]*nomad.JobListStub{
+		{ns: "kite", name: "web", dc: "dc1"}:    stub("kite", "web"),
+		{ns: "ops", name: "restart", dc: "dc1"}: stub("ops", "restart"),
+		{ns: "kite", name: "api", dc: "dc1"}:    stub("kite", "api"),
+	}
+	matched := map[jobKey]bool{{ns: "kite", name: "web", dc: "dc1"}: true}
+
+	got := unmatchedJobs(jobIndex, matched)
+	if len(got) != 2 {
+		t.Fatalf("got %d jobs, want 2", len(got))
+	}
+	if got[0].ID != "api" || got[1].ID != "restart" {
+		t.Errorf("got %s, %s; want api, restart", got[0].ID, got[1].ID)
 	}
 }

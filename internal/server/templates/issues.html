@@ -1,0 +1,91 @@
+{{ define "title" }}Issues - {{ .Name }}{{ end }}
+
+{{ define "content" }}
+<span id="health-status" data-health="{{ healthClass .Health }}" hidden></span>
+<div class="topbar">
+  <div>
+    <nav aria-label="Breadcrumb">
+      <ol class="unstyled hstack" style="font-size: var(--text-7)">
+        <li><a href="/" class="unstyled">Dashboard</a></li>
+        <li aria-hidden="true">/</li>
+        <li><strong>Issues</strong></li>
+      </ol>
+    </nav>
+    <h1>Issues</h1>
+    <div class="meta-row">
+      <span>Jobs in warning or critical: {{ len .Jobs }}</span>
+    </div>
+  </div>
+  <span class="refresh-note">
+    {{ fmtTime .UpdatedAt }}
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>
+  </span>
+</div>
+
+{{ if eq (len .Jobs) 0 }}
+<div role="alert">
+  No jobs need attention.
+</div>
+{{ else }}
+<div class="table">
+  <table>
+    <thead>
+      <tr>
+        <th>Job</th>
+        <th>Group</th>
+        <th>Namespace</th>
+        <th>Datacenter</th>
+        <th>Type</th>
+        <th>Status</th>
+        <th>Allocs</th>
+        <th style="text-align: center">Restarts</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{ range .Jobs }}
+      <tr>
+        <td>
+          <span class="status-dot {{ healthClass .Job.Health }}"></span>
+          <a href="/job/{{ .Job.Namespace }}/{{ .Job.ID }}?dc={{ .Job.DC }}">{{ .Job.Name }}</a>
+          {{ if .Job.Links }}
+          <span class="ext-links-inline">
+            {{ range .Job.Links }}
+              <a href="{{ .URL }}" target="_blank" rel="noopener" class="ext-link-pill" title="{{ .Label }}">{{ linkIcon .Icon }}</a>
+            {{ end }}
+          </span>
+          {{ end }}
+        </td>
+        <td>{{ if .Group }}<a href="/group/{{ slugify .Group }}" class="unstyled">{{ .Group }}</a>{{ else }}<span style="color: var(--muted-foreground)">-</span>{{ end }}</td>
+        <td>{{ .Job.Namespace }}</td>
+        <td>{{ .Job.DC }}</td>
+        <td>
+          <span class="badge {{ typeBadge .Job.Type }}">{{ .Job.Type }}</span>
+          {{ if .Job.Periodic }}<span class="badge">periodic</span>{{ end }}
+        </td>
+        <td>
+          {{ if .Job.Periodic }}
+            {{ if not .Job.StuckSince.IsZero }}
+              <span style="color: var(--status-critical);" title="oldest queued run still has no placement">run queued {{ fmtTime .Job.StuckSince }}, never started</span>
+            {{ else }}
+              <span style="color: var(--muted-foreground);">{{ .Job.ChildrenDead }} done{{ if gt .Job.ChildrenRunning 0 }}, {{ .Job.ChildrenRunning }} active{{ end }}</span>
+            {{ end }}
+          {{ else }}
+            <span class="status-dot {{ statusClass .Job.Status }}"></span>
+            {{ .Job.Status }}
+          {{ end }}
+        </td>
+        <td>{{ len .Job.Allocs }}</td>
+        <td style="text-align: center">
+          {{ if gt .Job.MaxRestarts 0 }}
+            <span class="badge {{ restartClass .Job.MaxAlertRestarts }}">{{ .Job.TotalRestarts }}</span>
+          {{ else }}
+            <span style="color: var(--muted-foreground)">-</span>
+          {{ end }}
+        </td>
+      </tr>
+      {{ end }}
+    </tbody>
+  </table>
+</div>
+{{ end }}
+{{ end }}

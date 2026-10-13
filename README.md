@@ -114,6 +114,9 @@ If a link has `meta`, only jobs matching a meta key get the link. Exact match be
 
 - **Dashboard** (`/`) - Table of groups with health status per DC, job counts, and restart indicators.
 - **Group** (`/group/{slug}`) - Table of jobs in the group with type, DC, status, restart count.
+- **Issues** (`/issues`) - Every job in warning or critical across groups and crons, worst first.
+- **Restarts** (`/restarts`) - Jobs with restarts in the display window, most first, with alert-window counts and the last restart time.
+- **Unmatched jobs** (`/unmatched`) - Jobs in the cluster that no group matches, to spot gaps in the config.
 - **Cron jobs** (`/crons`) - All periodic jobs in every namespace, sectioned by group (or by namespace for jobs no group matches), with their schedule, last and next run, and stuck runs.
 - **Job** (`/job/{ns}/{id}?dc=X`) - Allocations with task states, restart info, and expandable event log.
 - **Health** (`/healthz`) - Health check endpoint.
