@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -348,55 +349,91 @@ func (s *Server) handleGroup(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "group.html", data)
 }
 
-// cronsData builds paginated template data for the periodic jobs page.
-func (s *Server) cronsData(query url.Values) map[string]any {
+// cronSection is a block of crons on the crons page: one per group, then one
+// per namespace for crons no group matches.
+type cronSection struct {
+	Name      string
+	GroupSlug string // empty for namespace sections
+	Crons     []collector.CronStatus
+	Health    collector.Health
+	Healthy   int
+}
+
+// cronSections splits crons into group sections in config order, followed by
+// namespace sections for ungrouped crons sorted by namespace.
+func cronSections(groups []collector.GroupStatus, crons []collector.CronStatus) []cronSection {
+	byGroup := make(map[string]*cronSection)
+	byNS := make(map[string]*cronSection)
+	for _, c := range crons {
+		var sec *cronSection
+		if c.Group != "" {
+			if sec = byGroup[c.Group]; sec == nil {
+				sec = &cronSection{Name: c.Group, GroupSlug: slugify(c.Group)}
+				byGroup[c.Group] = sec
+			}
+		} else {
+			if sec = byNS[c.Job.Namespace]; sec == nil {
+				sec = &cronSection{Name: c.Job.Namespace}
+				byNS[c.Job.Namespace] = sec
+			}
+		}
+		sec.Crons = append(sec.Crons, c)
+		if c.Job.Health > sec.Health {
+			sec.Health = c.Job.Health
+		}
+		if c.Job.Health == collector.Healthy {
+			sec.Healthy++
+		}
+	}
+
+	out := make([]cronSection, 0, len(byGroup)+len(byNS))
+	for _, g := range groups {
+		if sec, ok := byGroup[g.Name]; ok {
+			out = append(out, *sec)
+		}
+	}
+	namespaces := make([]string, 0, len(byNS))
+	for ns := range byNS {
+		namespaces = append(namespaces, ns)
+	}
+	sort.Strings(namespaces)
+	for _, ns := range namespaces {
+		out = append(out, *byNS[ns])
+	}
+	return out
+}
+
+// cronsData builds template data for the crons page.
+func (s *Server) cronsData() map[string]any {
 	snap := s.collector.Snapshot()
-	crons := snap.Crons
-
-	p := s.pg.NewFromURL(query)
-	p.SetTotal(len(crons))
-
-	start := p.Offset
-	end := p.Offset + p.Limit
-	if start > len(crons) {
-		start = len(crons)
-	}
-	if end > len(crons) {
-		end = len(crons)
-	}
+	sections := cronSections(snap.Groups, snap.Crons)
 
 	health := collector.Healthy
 	healthy := 0
-	for _, c := range crons {
-		if c.Job.Health > health {
-			health = c.Job.Health
+	for _, sec := range sections {
+		if sec.Health > health {
+			health = sec.Health
 		}
-		if c.Job.Health == collector.Healthy {
-			healthy++
-		}
+		healthy += sec.Healthy
 	}
 
 	return map[string]any{
 		"Name":         s.cfg.DisplayName(),
-		"Crons":        crons[start:end],
-		"Total":        len(crons),
+		"Sections":     sections,
+		"Total":        len(snap.Crons),
 		"HealthyCount": healthy,
 		"Health":       health,
-		"Pgn":          p,
 		"UpdatedAt":    snap.UpdatedAt,
 		"PollInterval": int(s.cfg.PollDuration().Seconds()),
 	}
 }
 
 func (s *Server) handleCrons(w http.ResponseWriter, r *http.Request) {
-	s.render(w, "crons.html", s.cronsData(r.URL.Query()))
+	s.render(w, "crons.html", s.cronsData())
 }
 
 func (s *Server) handleSSECrons(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query()
-	s.sseStream(w, r, "crons.html", func() map[string]any {
-		return s.cronsData(query)
-	})
+	s.sseStream(w, r, "crons.html", s.cronsData)
 }
 
 // jobData builds template data for a job, looking in groups first and then in
