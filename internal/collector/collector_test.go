@@ -161,3 +161,33 @@ func TestBuildJobStatusStuckOutranksRestartWarning(t *testing.T) {
 		t.Errorf("Health = %v, want Critical (queued child must not be downgraded)", js.Health)
 	}
 }
+
+func TestBuildCrons(t *testing.T) {
+	c := testCollector()
+
+	grouped := periodicParent()
+	ungrouped := periodicParent()
+	ungrouped.ID, ungrouped.Name, ungrouped.Namespace = "a-ops-cron", "a-ops-cron", "ops"
+	service := &nomad.JobListStub{ID: "web", Name: "web", Namespace: "default", Type: "service", Status: JobStatusRunning}
+
+	jobIndex := map[jobKey]*nomad.JobListStub{
+		{ns: "default", name: "batch-job", dc: "dc1"}: grouped,
+		{ns: "ops", name: "a-ops-cron", dc: "dc1"}:    ungrouped,
+		{ns: "default", name: "web", dc: "dc1"}:       service,
+	}
+	groupedKey := jobKey{ns: "default", name: "batch-job", dc: "dc1"}
+	inGroup := map[jobKey]CronStatus{
+		groupedKey: {Group: "Batch", Job: JobStatus{ID: "batch-job", Name: "batch-job", Namespace: "default", DC: "dc1", Periodic: true}},
+	}
+
+	got := c.buildCrons(jobIndex, nil, nil, inGroup, time.Hour, 30*time.Minute)
+	if len(got) != 2 {
+		t.Fatalf("got %d crons, want 2", len(got))
+	}
+	if got[0].Job.ID != "a-ops-cron" || got[0].Group != "" || got[0].Job.Namespace != "ops" {
+		t.Errorf("got[0] = %+v, want ungrouped a-ops-cron in ops", got[0])
+	}
+	if got[1].Job.ID != "batch-job" || got[1].Group != "Batch" {
+		t.Errorf("got[1] = %+v, want batch-job in group Batch", got[1])
+	}
+}

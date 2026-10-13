@@ -173,7 +173,7 @@ func parseFragment(name string, funcMap template.FuncMap) (*template.Template, e
 func New(cfg config.Config, coll *collector.Collector, log *slog.Logger) (*Server, error) {
 	funcMap := baseFuncMap(cfg)
 
-	pages := []string{"dashboard.html", "group.html", "job.html"}
+	pages := []string{"dashboard.html", "group.html", "job.html", "crons.html"}
 	tpls := make(map[string]*template.Template, len(pages))
 	frags := make(map[string]*template.Template, len(pages))
 	for _, p := range pages {
@@ -211,9 +211,11 @@ func New(cfg config.Config, coll *collector.Collector, log *slog.Logger) (*Serve
 	s.mux.HandleFunc("GET /", s.handleDashboard)
 	s.mux.HandleFunc("GET /group/{slug}", s.handleGroup)
 	s.mux.HandleFunc("GET /job/{ns}/{id}", s.handleJob)
+	s.mux.HandleFunc("GET /crons", s.handleCrons)
 	s.mux.HandleFunc("GET /events/dashboard", s.handleSSEDashboard)
 	s.mux.HandleFunc("GET /events/group/{slug}", s.handleSSEGroup)
 	s.mux.HandleFunc("GET /events/job/{ns}/{id}", s.handleSSEJob)
+	s.mux.HandleFunc("GET /events/crons", s.handleSSECrons)
 
 	return s, nil
 }
@@ -346,21 +348,74 @@ func (s *Server) handleGroup(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "group.html", data)
 }
 
-func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
-	ns := r.PathValue("ns")
-	id := r.PathValue("id")
-	dc := r.URL.Query().Get("dc")
-
+// cronsData builds paginated template data for the periodic jobs page.
+func (s *Server) cronsData(query url.Values) map[string]any {
 	snap := s.collector.Snapshot()
+	crons := snap.Crons
 
-	var job *collector.JobStatus
-	var groupName string
-	for _, g := range snap.Groups {
+	p := s.pg.NewFromURL(query)
+	p.SetTotal(len(crons))
+
+	start := p.Offset
+	end := p.Offset + p.Limit
+	if start > len(crons) {
+		start = len(crons)
+	}
+	if end > len(crons) {
+		end = len(crons)
+	}
+
+	health := collector.Healthy
+	healthy := 0
+	for _, c := range crons {
+		if c.Job.Health > health {
+			health = c.Job.Health
+		}
+		if c.Job.Health == collector.Healthy {
+			healthy++
+		}
+	}
+
+	return map[string]any{
+		"Name":         s.cfg.DisplayName(),
+		"Crons":        crons[start:end],
+		"Total":        len(crons),
+		"HealthyCount": healthy,
+		"Health":       health,
+		"Pgn":          p,
+		"UpdatedAt":    snap.UpdatedAt,
+		"PollInterval": int(s.cfg.PollDuration().Seconds()),
+	}
+}
+
+func (s *Server) handleCrons(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "crons.html", s.cronsData(r.URL.Query()))
+}
+
+func (s *Server) handleSSECrons(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	s.sseStream(w, r, "crons.html", func() map[string]any {
+		return s.cronsData(query)
+	})
+}
+
+// jobData builds template data for a job, looking in groups first and then in
+// the cron list for periodic jobs no group matches. Returns nil if not found.
+func (s *Server) jobData(ns, id, dc string) map[string]any {
+	snap := s.collector.Snapshot()
+	match := func(j collector.JobStatus) bool {
+		return j.ID == id && j.Namespace == ns && (dc == "" || j.DC == dc)
+	}
+
+	var (
+		job       *collector.JobStatus
+		groupName string
+	)
+	for gi := range snap.Groups {
+		g := &snap.Groups[gi]
 		for i := range g.Jobs {
-			j := &g.Jobs[i]
-			if j.ID == id && j.Namespace == ns && (dc == "" || j.DC == dc) {
-				job = j
-				groupName = g.Name
+			if match(g.Jobs[i]) {
+				job, groupName = &g.Jobs[i], g.Name
 				break
 			}
 		}
@@ -368,20 +423,35 @@ func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
-
 	if job == nil {
-		http.NotFound(w, r)
-		return
+		for i := range snap.Crons {
+			if match(snap.Crons[i].Job) {
+				job, groupName = &snap.Crons[i].Job, snap.Crons[i].Group
+				break
+			}
+		}
+	}
+	if job == nil {
+		return nil
 	}
 
-	s.render(w, "job.html", map[string]any{
+	return map[string]any{
 		"Name":         s.cfg.DisplayName(),
 		"Job":          job,
 		"GroupName":    groupName,
 		"GroupSlug":    slugify(groupName),
 		"UpdatedAt":    snap.UpdatedAt,
 		"PollInterval": int(s.cfg.PollDuration().Seconds()),
-	})
+	}
+}
+
+func (s *Server) handleJob(w http.ResponseWriter, r *http.Request) {
+	data := s.jobData(r.PathValue("ns"), r.PathValue("id"), r.URL.Query().Get("dc"))
+	if data == nil {
+		http.NotFound(w, r)
+		return
+	}
+	s.render(w, "job.html", data)
 }
 
 // sseStream sends an initial SSE fragment, then streams updates on each poll.
@@ -477,22 +547,6 @@ func (s *Server) handleSSEJob(w http.ResponseWriter, r *http.Request) {
 	dc := r.URL.Query().Get("dc")
 
 	s.sseStream(w, r, "job.html", func() map[string]any {
-		snap := s.collector.Snapshot()
-		for _, g := range snap.Groups {
-			for i := range g.Jobs {
-				j := &g.Jobs[i]
-				if j.ID == id && j.Namespace == ns && (dc == "" || j.DC == dc) {
-					return map[string]any{
-						"Name":         s.cfg.DisplayName(),
-						"Job":          j,
-						"GroupName":    g.Name,
-						"GroupSlug":    slugify(g.Name),
-						"UpdatedAt":    snap.UpdatedAt,
-						"PollInterval": int(s.cfg.PollDuration().Seconds()),
-					}
-				}
-			}
-		}
-		return nil
+		return s.jobData(ns, id, dc)
 	})
 }

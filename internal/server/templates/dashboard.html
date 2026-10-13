@@ -3,7 +3,12 @@
 {{ define "content" }}
 <span id="health-status" data-health="{{ overallHealth .AllGroups }}" hidden></span>
 <div class="topbar">
-  <h1>{{ .Name }}</h1>
+  <div>
+    <h1>{{ .Name }}</h1>
+    <div class="meta-row">
+      <a href="/crons">Cron jobs</a>
+    </div>
+  </div>
   <span class="refresh-note">
     {{ fmtTime .UpdatedAt }}
     <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme"><span id="theme-icon">🌙</span></button>

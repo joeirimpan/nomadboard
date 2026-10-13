@@ -8,7 +8,11 @@
       <ol class="unstyled hstack" style="font-size: var(--text-7)">
         <li><a href="/" class="unstyled">Dashboard</a></li>
         <li aria-hidden="true">/</li>
+        {{ if .GroupName }}
         <li><a href="/group/{{ .GroupSlug }}" class="unstyled">{{ .GroupName }}</a></li>
+        {{ else }}
+        <li><a href="/crons" class="unstyled">Cron jobs</a></li>
+        {{ end }}
         <li aria-hidden="true">/</li>
         <li><strong>{{ .Job.Name }}</strong></li>
       </ol>

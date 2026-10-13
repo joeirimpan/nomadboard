@@ -202,12 +202,6 @@ func (c *Collector) poll() {
 	}
 	wg.Wait()
 
-	type jobKey struct {
-		ns, name, dc string
-	}
-	type allocKey struct {
-		ns, jobID, dc string
-	}
 	jobIndex := make(map[jobKey]*nomad.JobListStub)
 	// Children of periodic/parameterized parents, keyed by the parent's job key.
 	childIndex := make(map[jobKey][]*nomad.JobListStub)
@@ -239,6 +233,9 @@ func (c *Collector) poll() {
 
 	restartWindow := c.cfg.RestartWindow()
 	alertWindow := c.cfg.RestartAlertWindow()
+
+	// Periodic jobs already built under a group, reused for the cron list.
+	grouped := make(map[jobKey]CronStatus)
 
 	groups := make([]GroupStatus, 0, len(c.cfg.Groups))
 	for _, grp := range c.cfg.Groups {
@@ -293,6 +290,9 @@ func (c *Collector) poll() {
 						Var:       cl.Vars,
 					})
 					gs.Jobs = append(gs.Jobs, js)
+					if _, ok := grouped[key]; js.Periodic && !ok {
+						grouped[key] = CronStatus{Group: grp.Name, Job: js}
+					}
 					gs.TotalJobs++
 					gs.TotalAllocs += len(js.Allocs)
 					if js.Health == Healthy {
@@ -329,6 +329,7 @@ func (c *Collector) poll() {
 
 	snap := Snapshot{
 		Groups:    groups,
+		Crons:     c.buildCrons(jobIndex, childIndex, allocIndex, grouped, restartWindow, alertWindow),
 		UpdatedAt: time.Now(),
 	}
 
@@ -338,7 +339,51 @@ func (c *Collector) poll() {
 
 	c.notify()
 
-	c.log.Info("poll complete", "groups", len(groups), "duration", time.Since(start).Round(time.Millisecond))
+	c.log.Info("poll complete", "groups", len(groups), "crons", len(snap.Crons), "duration", time.Since(start).Round(time.Millisecond))
+}
+
+type jobKey struct {
+	ns, name, dc string
+}
+
+type allocKey struct {
+	ns, jobID, dc string
+}
+
+// buildCrons lists every periodic job across all namespaces, reusing the status
+// already built for jobs matched by a group.
+func (c *Collector) buildCrons(jobIndex map[jobKey]*nomad.JobListStub, childIndex map[jobKey][]*nomad.JobListStub, allocIndex map[allocKey][]*nomad.AllocationListStub, grouped map[jobKey]CronStatus, restartWindow, alertWindow time.Duration) []CronStatus {
+	var out []CronStatus
+	for key, stub := range jobIndex {
+		if !stub.Periodic {
+			continue
+		}
+		if cs, ok := grouped[key]; ok {
+			out = append(out, cs)
+			continue
+		}
+
+		allocs := allocIndex[allocKey{ns: key.ns, jobID: key.name, dc: key.dc}]
+		children := childIndex[key]
+		for _, ch := range children {
+			allocs = append(allocs, allocIndex[allocKey{ns: ch.Namespace, jobID: ch.ID, dc: key.dc}]...)
+		}
+		out = append(out, CronStatus{
+			Job: c.buildJobStatus(key.dc, key.ns, stub, allocs, children, restartWindow, alertWindow),
+		})
+	}
+
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i].Job, out[j].Job
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if a.DC != b.DC {
+			return a.DC < b.DC
+		}
+		return a.Namespace < b.Namespace
+	})
+	return out
 }
 
 // buildJobStatus computes health for a job using pre-fetched allocations.
